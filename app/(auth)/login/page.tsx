@@ -32,7 +32,7 @@ export default function LoginPage() {
         body: JSON.stringify(data),
       })
       const json = await res.json()
-      if (!res.ok) throw new Error(json.error || 'Erro ao fazer login')
+      if (!res.ok) throw new Error(json.details ? `${json.error}: ${json.details}` : (json.error || 'Erro ao fazer login'))
       toast.success('Login realizado com sucesso!')
       router.push('/dashboard')
     } catch (err) {
