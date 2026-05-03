@@ -50,7 +50,8 @@ export function phoneToJid(phone: string): string {
 }
 
 export function jidToPhone(jid: string): string {
-  return jid.replace('@s.whatsapp.net', '').replace('@g.us', '')
+  if (!jid) return ''
+  return jid.split('@')[0]
 }
 
 export function getInitials(name: string): string {

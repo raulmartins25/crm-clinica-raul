@@ -106,8 +106,11 @@ export async function POST(req: NextRequest) {
     })
 
     return NextResponse.json({ message })
-  } catch (error) {
+  } catch (error: any) {
     console.error('Send message error:', error)
-    return NextResponse.json({ error: 'Erro ao enviar mensagem' }, { status: 500 })
+    return NextResponse.json({ 
+      error: 'Erro ao enviar mensagem', 
+      details: error.response?.data || error.message 
+    }, { status: 500 })
   }
 }

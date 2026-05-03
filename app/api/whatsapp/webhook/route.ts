@@ -7,6 +7,7 @@ import { phoneToJid, jidToPhone } from '@/lib/utils'
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
+    console.log('Webhook received:', JSON.stringify(body, null, 2))
     const { event, data, instance } = body
     const apiKeyHeader = req.headers.get('x-webhook-secret') || req.headers.get('apikey') || ''
 
