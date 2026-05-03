@@ -51,6 +51,18 @@ export async function GET() {
 
     let data;
     try {
+      // Force update webhook to current environment URL
+      try {
+        const webhookUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/whatsapp/webhook`
+        await evo.setWebhook(webhookUrl)
+        await prisma.whatsappInstance.update({
+          where: { clinicId: session.clinicId },
+          data: { webhookUrl },
+        })
+      } catch (whErr) {
+        console.error('Warning: Failed to update webhook:', whErr)
+      }
+
       data = await evo.getQRCode()
     } catch (err: any) {
       if (err.response?.status === 404 || err.response?.data?.message?.includes('not found')) {

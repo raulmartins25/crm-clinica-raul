@@ -169,14 +169,31 @@ export function InboxClient({ session }: { session: SessionUser }) {
         {/* Header */}
         <div className="px-4 py-4 border-b border-gray-100">
           <div className="flex items-center justify-between mb-3">
-            <h2 className="font-semibold text-gray-900">
+            <h2 className="font-semibold text-gray-900 flex items-center gap-2">
               Inbox
               {totalUnread > 0 && (
-                <span className="ml-2 bg-sky-500 text-white text-xs px-2 py-0.5 rounded-full">
+                <span className="bg-sky-500 text-white text-xs px-2 py-0.5 rounded-full">
                   {totalUnread}
                 </span>
               )}
             </h2>
+            <button
+              onClick={async () => {
+                const id = toast.loading('Sincronizando conversas do WhatsApp...')
+                try {
+                  const res = await fetch('/api/whatsapp/sync', { method: 'POST' })
+                  const data = await res.json()
+                  if (!res.ok) throw new Error(data.error)
+                  toast.success(`Sincronização concluída! ${data.synced || 0} conversas importadas.`, { id })
+                  fetchConversations()
+                } catch (err: any) {
+                  toast.error(err.message || 'Erro ao sincronizar', { id })
+                }
+              }}
+              className="text-xs text-sky-600 font-medium hover:text-sky-700 hover:bg-sky-50 px-2 py-1 rounded transition"
+            >
+              Sincronizar
+            </button>
           </div>
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
