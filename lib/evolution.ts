@@ -82,7 +82,7 @@ export class EvolutionAPI {
   async sendMedia(payload: SendMediaPayload) {
     const res = await axios.post(
       `${this.baseUrl}/message/sendMedia/${this.instanceName}`,
-      payload,
+      { ...payload, base64: true },
       { headers: this.headers }
     )
     return res.data
@@ -119,16 +119,17 @@ export class EvolutionAPI {
     const res = await axios.post(
       `${this.baseUrl}/webhook/set/${this.instanceName}`,
       {
+        enabled: true,
         url: webhookUrl,
         webhook_by_events: false,
         webhook_base64: false,
         events: [
-          'MESSAGES_UPSERT',
-          'MESSAGES_UPDATE',
-          'MESSAGES_DELETE',
-          'SEND_MESSAGE',
-          'CONNECTION_UPDATE',
-          'QRCODE_UPDATED',
+          'messages.upsert',
+          'messages.update',
+          'messages.delete',
+          'send.message',
+          'connection.update',
+          'qrcode.updated',
         ],
       },
       { headers: this.headers }

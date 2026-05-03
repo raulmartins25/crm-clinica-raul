@@ -53,7 +53,8 @@ export async function GET() {
     try {
       // Force update webhook to current environment URL
       try {
-        const webhookUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/whatsapp/webhook`
+        const baseUrlApp = (process.env.NEXT_PUBLIC_APP_URL || '').replace(/\/$/, '')
+        const webhookUrl = `${baseUrlApp}/api/whatsapp/webhook`
         await evo.setWebhook(webhookUrl)
         await prisma.whatsappInstance.update({
           where: { clinicId: session.clinicId },

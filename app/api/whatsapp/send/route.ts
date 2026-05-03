@@ -44,7 +44,7 @@ export async function POST(req: NextRequest) {
         const res = await evo.sendMedia({
           number: phone,
           mediatype: 'image',
-          media: `data:${mime};base64,${base64}`,
+          media: base64,
           caption: text || undefined,
           fileName: file.name,
         })
@@ -58,7 +58,7 @@ export async function POST(req: NextRequest) {
         const res = await evo.sendMedia({
           number: phone,
           mediatype: 'video',
-          media: `data:${mime};base64,${base64}`,
+          media: base64,
           caption: text || undefined,
           fileName: file.name,
         })
@@ -68,7 +68,7 @@ export async function POST(req: NextRequest) {
         const res = await evo.sendMedia({
           number: phone,
           mediatype: 'document',
-          media: `data:${mime};base64,${base64}`,
+          media: base64,
           caption: text || undefined,
           fileName: file.name,
         })

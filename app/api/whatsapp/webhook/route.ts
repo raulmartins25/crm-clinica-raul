@@ -35,10 +35,14 @@ async function handleIncomingMessage(messagePayload: Record<string, any>, instan
   const message = messagePayload.message || messagePayload
   const key = messagePayload.key || message?.key
 
-  if (!key || key.fromMe) return
+  if (!key) return
 
   const remoteJid = key.remoteJid as string
   if (!remoteJid || remoteJid.includes('@g.us') || remoteJid.includes('@lid') || remoteJid.includes('status@broadcast')) return
+
+  // Se a mensagem for minha (enviada pelo celular), apenas atualizamos a conversa no banco
+  // mas não acionamos o robô de IA.
+  const fromMe = !!key.fromMe
 
   const phone = jidToPhone(remoteJid)
 
@@ -111,7 +115,7 @@ async function handleIncomingMessage(messagePayload: Record<string, any>, instan
         remotePhone: phone,
         remoteName: pushName,
         patientId: patient?.id,
-        unreadCount: 1,
+        unreadCount: fromMe ? 0 : 1,
         lastMessageAt: timestamp,
         lastMessageText: text || `[${msgType.toLowerCase()}]`,
       },
@@ -120,7 +124,7 @@ async function handleIncomingMessage(messagePayload: Record<string, any>, instan
     await prisma.conversation.update({
       where: { id: conversation.id },
       data: {
-        unreadCount: { increment: 1 },
+        unreadCount: fromMe ? undefined : { increment: 1 },
         lastMessageAt: timestamp,
         lastMessageText: text || `[${msgType.toLowerCase()}]`,
         remoteName: pushName || conversation.remoteName,
@@ -133,7 +137,7 @@ async function handleIncomingMessage(messagePayload: Record<string, any>, instan
     data: {
       conversationId: conversation.id,
       externalId,
-      direction: 'INBOUND',
+      direction: fromMe ? 'OUTBOUND' : 'INBOUND',
       type: msgType as 'TEXT' | 'IMAGE' | 'AUDIO' | 'VIDEO' | 'DOCUMENT',
       content: text,
       mediaUrl,
@@ -144,8 +148,8 @@ async function handleIncomingMessage(messagePayload: Record<string, any>, instan
     },
   })
 
-  // Run AI agent if enabled
-  if (conversation.aiEnabled && conversation.agentId && text) {
+  // Run AI agent if enabled (ONLY for inbound messages)
+  if (!fromMe && conversation.aiEnabled && conversation.agentId && text) {
     const agent = await prisma.aIAgent.findUnique({
       where: { id: conversation.agentId },
       include: { clinic: true, knowledgeItems: { where: { active: true } } },
