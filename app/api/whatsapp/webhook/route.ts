@@ -8,12 +8,16 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
     const { event, data, instance } = body
+    const apiKeyHeader = req.headers.get('x-webhook-secret') || req.headers.get('apikey') || ''
 
-    if (event === 'messages.upsert') {
-      await handleIncomingMessage(data, instance)
-    } else if (event === 'connection.update') {
+    const eventLower = event?.toLowerCase()
+
+    if (eventLower === 'messages.upsert') {
+      let messagePayload = data?.messages?.[0] || data?.message || data
+      await handleIncomingMessage(messagePayload, instance, apiKeyHeader)
+    } else if (eventLower === 'connection.update') {
       await handleConnectionUpdate(data, instance)
-    } else if (event === 'qrcode.updated') {
+    } else if (eventLower === 'qrcode.updated') {
       await handleQRCodeUpdate(data, instance)
     }
 
@@ -24,18 +28,22 @@ export async function POST(req: NextRequest) {
   }
 }
 
-async function handleIncomingMessage(data: Record<string, unknown>, instanceName: string) {
-  const message = data.message as Record<string, unknown>
-  if (!message) return
+async function handleIncomingMessage(messagePayload: Record<string, any>, instanceName: string, apiKeyHeader = '') {
+  if (!messagePayload) return
 
-  const key = message.key as Record<string, unknown>
+  const message = messagePayload.message || messagePayload
+  const key = messagePayload.key || message?.key
+
   if (!key || key.fromMe) return
 
   const remoteJid = key.remoteJid as string
+  if (!remoteJid || remoteJid.includes('@g.us') || remoteJid.includes('@lid') || remoteJid.includes('status@broadcast')) return
+
   const phone = jidToPhone(remoteJid)
 
-  const pushName = (message.pushName as string) || ''
-  const messageContent = message.message as Record<string, unknown>
+  const pushName = (messagePayload.pushName as string) || (messagePayload.pushname as string) || (message.pushName as string) || (message.pushname as string) || ''
+  const messageContent = message.message || message
+
   if (!messageContent) return
 
   let text = ''
@@ -70,13 +78,24 @@ async function handleIncomingMessage(data: Record<string, unknown>, instanceName
     mediaMimeType = (vid.mimetype as string) || 'video/mp4'
   }
 
-  const externalId = (key.id as string) || ''
-  const timestamp = new Date((message.messageTimestamp as number) * 1000 || Date.now())
+  // Falha silenciosa para tipos não suportados
+  if (!text && msgType === 'TEXT') return
 
-  const whatsappInstance = await prisma.whatsappInstance.findUnique({
+  const externalId = (key.id as string) || ''
+  const timestamp = new Date((messagePayload.messageTimestamp as number) * 1000 || Date.now())
+
+  let whatsappInstance = await prisma.whatsappInstance.findUnique({
     where: { instanceName },
     include: { clinic: true },
   })
+
+  if (!whatsappInstance && apiKeyHeader) {
+    whatsappInstance = await prisma.whatsappInstance.findFirst({
+      where: { apiKey: apiKeyHeader },
+      include: { clinic: true },
+    })
+  }
+
   if (!whatsappInstance) return
 
   const patient = await prisma.patient.findFirst({

@@ -26,11 +26,11 @@ export async function POST() {
 
     // 2. Para cada chat, cria/atualiza a Conversation no banco de dados
     for (const chat of chats) {
-      const remoteJid = chat.id || chat.remoteJid
-      if (!remoteJid || remoteJid.includes('@g.us')) continue // ignora grupos por enquanto
+      const remoteJid = chat.remoteJid
+      if (!remoteJid || remoteJid.includes('@g.us') || remoteJid.includes('@lid') || remoteJid.includes('status@broadcast')) continue
 
       const phone = jidToPhone(remoteJid)
-      const pushName = chat.name || chat.pushName || ''
+      const pushName = chat.name || chat.pushName || chat.pushname || ''
       const unreadCount = chat.unreadCount || 0
 
       // Tenta achar paciente correspondente
