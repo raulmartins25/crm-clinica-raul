@@ -98,8 +98,9 @@ export class EvolutionAPI {
   }
 
   async getChats() {
-    const res = await axios.get(
+    const res = await axios.post(
       `${this.baseUrl}/chat/findChats/${this.instanceName}`,
+      {},
       { headers: this.headers }
     )
     return res.data
