@@ -14,8 +14,12 @@ export async function POST(req: NextRequest) {
     const eventLower = event?.toLowerCase()
 
     if (eventLower === 'messages.upsert') {
-      // Evolution API v2 can send data.messages[] or data directly
-      const messages = data?.messages || (Array.isArray(data) ? data : [data?.message || data])
+      // Evolution API v2 sends data as the message object directly OR data.messages[]
+      const messages: any[] = data?.messages
+        ? data.messages                 // array format
+        : Array.isArray(data)
+        ? data                           // direct array
+        : [data]                         // single message object
       for (const msg of messages) {
         if (msg) await handleIncomingMessage(msg, instance, apiKeyHeader)
       }
@@ -35,25 +39,24 @@ export async function POST(req: NextRequest) {
 async function handleIncomingMessage(messagePayload: Record<string, any>, instanceName: string, apiKeyHeader = '') {
   if (!messagePayload) return
 
-  const message = messagePayload.message || messagePayload
-  const key = messagePayload.key || message?.key
+  // The message wrapper has .key at root level
+  // The actual message content is in .message
+  const key = messagePayload.key
 
   if (!key) {
-    console.log('Webhook: No key found in payload:', JSON.stringify(messagePayload).slice(0, 200))
+    console.log('Webhook: No key found in payload:', JSON.stringify(messagePayload).slice(0, 300))
     return
   }
 
   const remoteJid = key.remoteJid as string
   if (!remoteJid || remoteJid.includes('@g.us') || remoteJid.includes('@lid') || remoteJid.includes('status@broadcast')) return
 
-  // Se a mensagem for minha (enviada pelo celular), apenas atualizamos a conversa no banco
-  // mas não acionamos o robô de IA.
   const fromMe = !!key.fromMe
-
   const phone = jidToPhone(remoteJid)
 
-  const pushName = (messagePayload.pushName as string) || (messagePayload.pushname as string) || (message.pushName as string) || (message.pushname as string) || ''
-  const messageContent = message.message || message
+  const pushName = (messagePayload.pushName as string) || (messagePayload.pushname as string) || ''
+  // The actual message content (conversation, imageMessage, etc.)
+  const messageContent = messagePayload.message as Record<string, any>
 
   if (!messageContent) return
 
