@@ -127,18 +127,13 @@ export class EvolutionAPI {
     const res = await axios.post(
       `${this.baseUrl}/webhook/set/${this.instanceName}`,
       {
-        enabled: true,
-        url: webhookUrl,
-        webhook_by_events: false,
-        webhook_base64: false,
-        events: [
-          'messages.upsert',
-          'messages.update',
-          'messages.delete',
-          'send.message',
-          'connection.update',
-          'qrcode.updated',
-        ],
+        webhook: {
+          enabled: true,
+          url: webhookUrl,
+          webhook_by_events: false,
+          webhook_base64: false,
+          events: ['MESSAGES_UPSERT', 'CONNECTION_UPDATE', 'QRCODE_UPDATED'],
+        },
       },
       { headers: this.headers }
     )
