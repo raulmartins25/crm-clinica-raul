@@ -106,6 +106,14 @@ export class EvolutionAPI {
     return res.data
   }
 
+  async getWebhook() {
+    const res = await axios.get(
+      `${this.baseUrl}/webhook/find/${this.instanceName}`,
+      { headers: this.headers }
+    )
+    return res.data
+  }
+
   async getMessages(remoteJid: string, limit = 50) {
     const res = await axios.post(
       `${this.baseUrl}/chat/findMessages/${this.instanceName}`,
