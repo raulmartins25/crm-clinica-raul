@@ -14,8 +14,11 @@ export async function POST(req: NextRequest) {
     const eventLower = event?.toLowerCase()
 
     if (eventLower === 'messages.upsert') {
-      let messagePayload = data?.messages?.[0] || data?.message || data
-      await handleIncomingMessage(messagePayload, instance, apiKeyHeader)
+      // Evolution API v2 can send data.messages[] or data directly
+      const messages = data?.messages || (Array.isArray(data) ? data : [data?.message || data])
+      for (const msg of messages) {
+        if (msg) await handleIncomingMessage(msg, instance, apiKeyHeader)
+      }
     } else if (eventLower === 'connection.update') {
       await handleConnectionUpdate(data, instance)
     } else if (eventLower === 'qrcode.updated') {
@@ -35,7 +38,10 @@ async function handleIncomingMessage(messagePayload: Record<string, any>, instan
   const message = messagePayload.message || messagePayload
   const key = messagePayload.key || message?.key
 
-  if (!key) return
+  if (!key) {
+    console.log('Webhook: No key found in payload:', JSON.stringify(messagePayload).slice(0, 200))
+    return
+  }
 
   const remoteJid = key.remoteJid as string
   if (!remoteJid || remoteJid.includes('@g.us') || remoteJid.includes('@lid') || remoteJid.includes('status@broadcast')) return
@@ -83,8 +89,11 @@ async function handleIncomingMessage(messagePayload: Record<string, any>, instan
     mediaMimeType = (vid.mimetype as string) || 'video/mp4'
   }
 
-  // Falha silenciosa para tipos não suportados
-  if (!text && msgType === 'TEXT') return
+  // Permite mensagens sem texto apenas se for mídia
+  if (!text && msgType === 'TEXT') {
+    console.log('Webhook: Skipping empty TEXT message from', remoteJid)
+    return
+  }
 
   const externalId = (key.id as string) || ''
   const timestamp = new Date((messagePayload.messageTimestamp as number) * 1000 || Date.now())

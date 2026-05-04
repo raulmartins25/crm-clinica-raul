@@ -10,6 +10,30 @@ export async function GET(req: NextRequest) {
     where: { clinicId: session.clinicId },
   })
 
+  if (!instance) return NextResponse.json({ instance: null })
+
+  // Query Evolution API for live state
+  try {
+    const evo = new EvolutionAPI({
+      baseUrl: process.env.EVOLUTION_API_URL || instance.baseUrl,
+      apiKey: process.env.EVOLUTION_API_KEY || instance.apiKey,
+      instanceName: instance.instanceName,
+    })
+    const status = await evo.getInstanceStatus()
+    const liveConnected = status?.instance?.state === 'open' || status?.state === 'open'
+    
+    // Update DB if status changed
+    if (liveConnected !== instance.connected) {
+      await prisma.whatsappInstance.update({
+        where: { id: instance.id },
+        data: { connected: liveConnected },
+      })
+      instance.connected = liveConnected
+    }
+  } catch {
+    // If Evolution is unreachable, keep DB value
+  }
+
   return NextResponse.json({ instance })
 }
 

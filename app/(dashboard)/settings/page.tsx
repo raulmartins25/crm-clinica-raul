@@ -82,6 +82,7 @@ export default function SettingsPage() {
   const [qrCode, setQrCode] = useState<string | null>(null)
   const [loadingQR, setLoadingQR] = useState(false)
   const [savingWA, setSavingWA] = useState(false)
+  const waPollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   // Email state
   const [emailForm, setEmailForm] = useState({ host: '', port: '587', user: '', password: '', fromName: '', fromEmail: '', secure: false })
@@ -92,8 +93,19 @@ export default function SettingsPage() {
 
   useEffect(() => {
     if (activeTab === 'users') fetchUsers()
-    if (activeTab === 'whatsapp') fetchWAStatus()
+    if (activeTab === 'whatsapp') {
+      fetchWAStatus()
+      // Poll status every 5s while on whatsapp tab
+      waPollingRef.current = setInterval(fetchWAStatus, 5000)
+    }
     if (activeTab === 'clinic') fetchClinic()
+
+    return () => {
+      if (waPollingRef.current) {
+        clearInterval(waPollingRef.current)
+        waPollingRef.current = null
+      }
+    }
   }, [activeTab])
 
   const fetchClinic = async () => {
@@ -186,12 +198,17 @@ export default function SettingsPage() {
   }
 
   const fetchWAStatus = async () => {
-    const res = await fetch('/api/settings/whatsapp')
-    const data = await res.json()
-    if (data.instance) {
-      setWaInstance(data.instance)
-      setWaConnected(data.instance.connected)
-    }
+    try {
+      const res = await fetch('/api/settings/whatsapp')
+      const data = await res.json()
+      if (data.instance) {
+        setWaInstance(data.instance)
+        const connected = data.instance.connected
+        setWaConnected(connected)
+        // Auto-clear QR when connected
+        if (connected) setQrCode(null)
+      }
+    } catch { /* silent */ }
   }
 
   const setupWhatsApp = async (data: WAForm) => {
