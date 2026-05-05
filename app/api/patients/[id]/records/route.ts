@@ -38,6 +38,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       weight: body.weight ? Number(body.weight) : null,
       height: body.height ? Number(body.height) : null,
       oxygenSat: body.oxygenSat ? Number(body.oxygenSat) : null,
+      extraData: body.extraData ?? null,
     },
     include: { doctor: { select: { name: true, crm: true } } },
   })

@@ -24,6 +24,7 @@ enum MessageType {
   STICKER
   LOCATION
   CONTACT
+  REACTION
 }
 
 enum MessageStatus {
@@ -64,20 +65,24 @@ enum AgentStatus {
 
 // ─── CLINIC ────────────────────────────────────────────────────────────
 model Clinic {
-  id          String   @id @default(cuid())
-  name        String
-  cnpj        String?  @unique
-  phone       String?
-  email       String?
-  address     String?
-  city        String?
-  state       String?
-  zipCode     String?
-  logoUrl     String?
-  website     String?
-  specialty   String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id                  String   @id @default(cuid())
+  name                String
+  cnpj                String?  @unique
+  phone               String?
+  email               String?
+  address             String?
+  city                String?
+  state               String?
+  zipCode             String?
+  logoUrl             String?
+  website             String?
+  specialty           String?
+  clinicType          String?
+  onboardingCompleted Boolean  @default(false)
+  responsavelTecnico  String?
+  numeroConselho      String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 
   users            User[]
   patients         Patient[]
@@ -245,6 +250,7 @@ model MedicalRecord {
   weight          Float?
   height          Float?
   oxygenSat       Float?
+  extraData       Json?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 

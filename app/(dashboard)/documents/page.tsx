@@ -18,10 +18,101 @@ interface Document {
 }
 interface Patient { id: string; name: string }
 
-const docTypes = [
+interface DocTypeConfig {
+  value: string
+  label: string
+  icon: typeof FileText
+}
+
+function getDocumentTypes(clinicType?: string | null): DocTypeConfig[] {
+  switch (clinicType) {
+    case 'ODONTOLOGIA':
+      return [
+        { value: 'PRESCRIPTION', label: 'Receituário Odontológico', icon: FileText },
+        { value: 'CERTIFICATE', label: 'Atestado de Saúde Bucal', icon: FileMinus },
+        { value: 'REPORT', label: 'Orçamento', icon: FileText },
+        { value: 'REFERRAL', label: 'Encaminhamento', icon: Stethoscope },
+        { value: 'OTHER', label: 'Orientações Pós-Procedimento', icon: FileText },
+        { value: 'OTHER', label: 'Outro', icon: FileText },
+      ]
+    case 'GINECOLOGIA':
+      return [
+        { value: 'PRESCRIPTION', label: 'Receituário', icon: FileText },
+        { value: 'EXAM_REQUEST', label: 'Pedido de Exames', icon: FileCheck },
+        { value: 'CERTIFICATE', label: 'Atestado', icon: FileMinus },
+        { value: 'REPORT', label: 'Cartão da Gestante', icon: FileText },
+        { value: 'EXAM_REQUEST', label: 'Solicitação de Pré-natal', icon: FileCheck },
+        { value: 'OTHER', label: 'Declaração de Comparecimento', icon: FileText },
+        { value: 'OTHER', label: 'Outro', icon: FileText },
+      ]
+    case 'PEDIATRIA':
+      return [
+        { value: 'PRESCRIPTION', label: 'Receituário Pediátrico', icon: FileText },
+        { value: 'EXAM_REQUEST', label: 'Pedido de Exames', icon: FileCheck },
+        { value: 'CERTIFICATE', label: 'Atestado', icon: FileMinus },
+        { value: 'OTHER', label: 'Declaração Escolar', icon: FileText },
+        { value: 'REFERRAL', label: 'Encaminhamento', icon: Stethoscope },
+        { value: 'OTHER', label: 'Outro', icon: FileText },
+      ]
+    case 'DERMATOLOGIA':
+      return [
+        { value: 'PRESCRIPTION', label: 'Receituário Dermatológico', icon: FileText },
+        { value: 'REPORT', label: 'Protocolo Estético', icon: FileText },
+        { value: 'OTHER', label: 'Termo de Consentimento', icon: FileText },
+        { value: 'REPORT', label: 'Orientações Pós-Procedimento', icon: FileText },
+        { value: 'REFERRAL', label: 'Encaminhamento', icon: Stethoscope },
+        { value: 'OTHER', label: 'Outro', icon: FileText },
+      ]
+    case 'PSICOLOGIA':
+      return [
+        { value: 'REPORT', label: 'Relatório Psicológico', icon: FileText },
+        { value: 'REPORT', label: 'Laudo', icon: FileText },
+        { value: 'CERTIFICATE', label: 'Declaração de Acompanhamento', icon: FileMinus },
+        { value: 'REFERRAL', label: 'Encaminhamento', icon: Stethoscope },
+        { value: 'OTHER', label: 'Outro', icon: FileText },
+      ]
+    case 'FISIOTERAPIA':
+      return [
+        { value: 'REPORT', label: 'Plano de Reabilitação', icon: FileText },
+        { value: 'REPORT', label: 'Relatório de Evolução', icon: FileText },
+        { value: 'CERTIFICATE', label: 'Atestado', icon: FileMinus },
+        { value: 'REFERRAL', label: 'Encaminhamento', icon: Stethoscope },
+        { value: 'OTHER', label: 'Outro', icon: FileText },
+      ]
+    case 'ENDOCRINOLOGIA':
+      return [
+        { value: 'PRESCRIPTION', label: 'Receituário', icon: FileText },
+        { value: 'EXAM_REQUEST', label: 'Pedido de Exames', icon: FileCheck },
+        { value: 'REPORT', label: 'Relatório Metabólico', icon: FileText },
+        { value: 'REFERRAL', label: 'Encaminhamento', icon: Stethoscope },
+        { value: 'OTHER', label: 'Outro', icon: FileText },
+      ]
+    case 'NUTRICAO':
+      return [
+        { value: 'REPORT', label: 'Plano Alimentar', icon: FileText },
+        { value: 'OTHER', label: 'Lista de Substituições', icon: FileText },
+        { value: 'OTHER', label: 'Orientações Nutricionais', icon: FileText },
+        { value: 'REPORT', label: 'Relatório de Evolução', icon: FileText },
+        { value: 'OTHER', label: 'Outro', icon: FileText },
+      ]
+    // MEDICA e padrão
+    default:
+      return [
+        { value: 'PRESCRIPTION', label: 'Receituário', icon: FileText },
+        { value: 'EXAM_REQUEST', label: 'Pedido de Exames', icon: FileCheck },
+        { value: 'REPORT', label: 'Relatório Médico', icon: FileText },
+        { value: 'CERTIFICATE', label: 'Atestado', icon: FileMinus },
+        { value: 'REFERRAL', label: 'Encaminhamento', icon: Stethoscope },
+        { value: 'OTHER', label: 'Outro', icon: FileText },
+      ]
+  }
+}
+
+// Mapeamento estático para ícones na sidebar (usa enum do Prisma)
+const BASE_ICON_MAP: DocTypeConfig[] = [
   { value: 'PRESCRIPTION', label: 'Receituário', icon: FileText },
   { value: 'EXAM_REQUEST', label: 'Pedido de Exames', icon: FileCheck },
-  { value: 'REPORT', label: 'Relatório Médico', icon: FileText },
+  { value: 'REPORT', label: 'Relatório', icon: FileText },
   { value: 'CERTIFICATE', label: 'Atestado', icon: FileMinus },
   { value: 'REFERRAL', label: 'Encaminhamento', icon: Stethoscope },
   { value: 'OTHER', label: 'Outro', icon: FileText },
@@ -32,6 +123,7 @@ type Step = 'form' | 'preview' | 'done'
 export default function DocumentsPage() {
   const [documents, setDocuments] = useState<Document[]>([])
   const [patients, setPatients] = useState<Patient[]>([])
+  const [clinicType, setClinicType] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(false)
   const [selectedDoc, setSelectedDoc] = useState<Document | null>(null)
@@ -41,7 +133,7 @@ export default function DocumentsPage() {
   const [saving, setSaving] = useState(false)
   const [sending, setSending] = useState<'whatsapp' | 'email' | null>(null)
   const [form, setForm] = useState({
-    patientId: '', type: 'PRESCRIPTION', title: 'Receituário Médico',
+    patientId: '', type: 'PRESCRIPTION', title: 'Receituário',
     content: '', details: '', useAI: true,
   })
   const [previewContent, setPreviewContent] = useState('')
@@ -57,7 +149,18 @@ export default function DocumentsPage() {
   useEffect(() => {
     fetchDocuments()
     fetch('/api/patients?limit=200').then(r => r.json()).then(d => setPatients(d.patients || []))
+    fetch('/api/settings/clinic').then(r => r.json()).then(d => {
+      const ct = d.clinic?.clinicType ?? null
+      setClinicType(ct)
+      // Atualiza defaults do form com o primeiro tipo da clínica
+      const types = getDocumentTypes(ct)
+      if (types.length > 0) {
+        setForm(p => ({ ...p, type: types[0].value, title: types[0].label }))
+      }
+    })
   }, [fetchDocuments])
+
+  const docTypes = getDocumentTypes(clinicType)
 
   const generatePreview = async () => {
     if (!form.patientId) return toast.error('Selecione um paciente')
@@ -67,7 +170,7 @@ export default function DocumentsPage() {
       const res = await fetch('/api/ai/generate-document', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
+        body: JSON.stringify({ ...form, clinicType }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error)
@@ -136,7 +239,9 @@ export default function DocumentsPage() {
   }
 
   const resetForm = () => {
-    setForm({ patientId: '', type: 'PRESCRIPTION', title: 'Receituário Médico', content: '', details: '', useAI: true })
+    const types = getDocumentTypes(clinicType)
+    const first = types[0] ?? { value: 'PRESCRIPTION', label: 'Receituário' }
+    setForm({ patientId: '', type: first.value, title: first.label, content: '', details: '', useAI: true })
     setPreviewContent('')
     setStep('form')
   }
@@ -145,7 +250,11 @@ export default function DocumentsPage() {
     d.title.toLowerCase().includes(search.toLowerCase()) ||
     d.patient.name.toLowerCase().includes(search.toLowerCase())
   )
-  const typeInfo = (type: string) => docTypes.find(t => t.value === type) || docTypes[5]
+
+  const typeInfo = (type: string) => BASE_ICON_MAP.find(t => t.value === type) ?? BASE_ICON_MAP[5]
+
+  // Seleção de tipo considera também o título (evita highlight duplo em values repetidos)
+  const isSelected = (dt: DocTypeConfig) => form.type === dt.value && form.title === dt.label
 
   return (
     <div className="flex h-full">
@@ -207,10 +316,10 @@ export default function DocumentsPage() {
                   <ChevronLeft className="w-5 h-5 text-gray-500" />
                 </button>
               )}
-              {['form', 'preview', 'done'].map((s, i) => (
+              {(['form', 'preview', 'done'] as const).map((s, i) => (
                 <div key={s} className="flex items-center gap-2">
                   <div className={cn('w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold',
-                    step === s ? 'bg-sky-500 text-white' : i < ['form','preview','done'].indexOf(step) ? 'bg-green-500 text-white' : 'bg-gray-200 text-gray-500')}>
+                    step === s ? 'bg-sky-500 text-white' : i < (['form','preview','done'] as const).indexOf(step) ? 'bg-green-500 text-white' : 'bg-gray-200 text-gray-500')}>
                     {i + 1}
                   </div>
                   <span className={cn('text-sm', step === s ? 'text-sky-600 font-medium' : 'text-gray-400')}>
@@ -230,10 +339,11 @@ export default function DocumentsPage() {
                 <div>
                   <label className="text-sm font-medium text-gray-700 mb-2 block">Tipo de Documento</label>
                   <div className="grid grid-cols-3 gap-2">
-                    {docTypes.map(dt => (
-                      <button key={dt.value} onClick={() => setForm(p => ({ ...p, type: dt.value, title: dt.label }))}
+                    {docTypes.map((dt, idx) => (
+                      <button key={`${dt.value}-${idx}`}
+                        onClick={() => setForm(p => ({ ...p, type: dt.value, title: dt.label }))}
                         className={cn('flex items-center gap-2 px-3 py-2.5 rounded-lg border text-sm font-medium transition',
-                          form.type === dt.value ? 'bg-sky-50 border-sky-300 text-sky-700' : 'border-gray-200 text-gray-600 hover:border-gray-300')}>
+                          isSelected(dt) ? 'bg-sky-50 border-sky-300 text-sky-700' : 'border-gray-200 text-gray-600 hover:border-gray-300')}>
                         <dt.icon className="w-4 h-4" />{dt.label}
                       </button>
                     ))}

@@ -106,6 +106,20 @@ export class EvolutionAPI {
     return res.data
   }
 
+  async fetchProfile(number: string): Promise<{ name: string; picture: string } | null> {
+    try {
+      const res = await axios.post(
+        `${this.baseUrl}/chat/fetchProfile/${this.instanceName}`,
+        { number },
+        { headers: this.headers, timeout: 6000 }
+      )
+      const { name, picture } = res.data
+      return { name: name || '', picture: picture || '' }
+    } catch {
+      return null
+    }
+  }
+
   async getWebhook() {
     const res = await axios.get(
       `${this.baseUrl}/webhook/find/${this.instanceName}`,
@@ -130,10 +144,29 @@ export class EvolutionAPI {
         webhook: {
           enabled: true,
           url: webhookUrl,
-          webhook_by_events: false,
-          webhook_base64: false,
-          events: ['MESSAGES_UPSERT', 'CONNECTION_UPDATE', 'QRCODE_UPDATED'],
+          webhookByEvents: false,
+          webhookBase64: false,
+          events: [
+            'MESSAGES_UPSERT',
+            'MESSAGES_UPDATE',
+            'MESSAGES_REACTION',
+            'SEND_MESSAGE',
+            'CONNECTION_UPDATE',
+            'QRCODE_UPDATED',
+          ],
         },
+      },
+      { headers: this.headers }
+    )
+    return res.data
+  }
+
+  async sendReaction(remoteJid: string, messageId: string, emoji: string) {
+    const res = await axios.post(
+      `${this.baseUrl}/message/sendReaction/${this.instanceName}`,
+      {
+        key: { remoteJid, fromMe: true, id: messageId },
+        reaction: emoji,
       },
       { headers: this.headers }
     )

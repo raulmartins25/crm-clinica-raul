@@ -14,15 +14,18 @@ export async function POST(req: NextRequest) {
     const eventLower = event?.toLowerCase()
 
     if (eventLower === 'messages.upsert') {
-      // Evolution API v2 sends data as the message object directly OR data.messages[]
       const messages: any[] = data?.messages
-        ? data.messages                 // array format
+        ? data.messages
         : Array.isArray(data)
-        ? data                           // direct array
-        : [data]                         // single message object
+        ? data
+        : [data]
       for (const msg of messages) {
         if (msg) await handleIncomingMessage(msg, instance, apiKeyHeader)
       }
+    } else if (eventLower === 'send.message') {
+      if (data) await handleSentMessage(data, instance, apiKeyHeader)
+    } else if (eventLower === 'messages.reaction') {
+      if (data) await handleReaction(data, instance, apiKeyHeader)
     } else if (eventLower === 'connection.update') {
       await handleConnectionUpdate(data, instance)
     } else if (eventLower === 'qrcode.updated') {
@@ -90,6 +93,12 @@ async function handleIncomingMessage(messagePayload: Record<string, any>, instan
     const vid = messageContent.videoMessage as Record<string, unknown>
     text = (vid.caption as string) || ''
     mediaMimeType = (vid.mimetype as string) || 'video/mp4'
+  } else if (messageContent.reactionMessage) {
+    // Reactions delivered inside messages.upsert
+    msgType = 'REACTION'
+    const rxn = messageContent.reactionMessage as Record<string, any>
+    text = (rxn.text || rxn.emoji || '') as string
+    mediaName = (rxn.key?.id || '') as string // target message externalId
   }
 
   // Permite mensagens sem texto apenas se for mídia
@@ -150,7 +159,8 @@ async function handleIncomingMessage(messagePayload: Record<string, any>, instan
       conversationId: conversation.id,
       externalId,
       direction: fromMe ? 'OUTBOUND' : 'INBOUND',
-      type: msgType as 'TEXT' | 'IMAGE' | 'AUDIO' | 'VIDEO' | 'DOCUMENT',
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      type: msgType as any,
       content: text,
       mediaUrl,
       mediaName,
@@ -234,6 +244,107 @@ async function handleIncomingMessage(messagePayload: Record<string, any>, instan
       })
     }
   }
+}
+
+async function handleSentMessage(data: Record<string, any>, instanceName: string, apiKeyHeader = '') {
+  const key = data.key
+  if (!key || !key.fromMe) return
+
+  const remoteJid = key.remoteJid as string
+  if (!remoteJid || remoteJid.includes('@g.us') || remoteJid.includes('@lid') || remoteJid.includes('status@broadcast')) return
+
+  const externalId = key.id as string
+  if (!externalId) return
+
+  // If we already have this message (sent via our app), just update the status
+  const existing = await prisma.message.findUnique({ where: { externalId } })
+  if (existing) {
+    await prisma.message.update({ where: { externalId }, data: { status: 'DELIVERED' } })
+    return
+  }
+
+  // Message sent from another client (WhatsApp app, other tool) — record it
+  let whatsappInstance = await prisma.whatsappInstance.findUnique({ where: { instanceName }, include: { clinic: true } })
+  if (!whatsappInstance && apiKeyHeader) {
+    whatsappInstance = await prisma.whatsappInstance.findFirst({ where: { apiKey: apiKeyHeader }, include: { clinic: true } })
+  }
+  if (!whatsappInstance) return
+
+  const phone = jidToPhone(remoteJid)
+  const messageContent = data.message as Record<string, any>
+  const text = messageContent?.conversation || messageContent?.extendedTextMessage?.text || ''
+  const timestamp = new Date((data.messageTimestamp as number) * 1000 || Date.now())
+
+  let conversation = await prisma.conversation.findUnique({ where: { remoteJid } })
+  if (!conversation) {
+    conversation = await prisma.conversation.create({
+      data: { remoteJid, remotePhone: phone, unreadCount: 0, lastMessageAt: timestamp, lastMessageText: text || '[mensagem]' },
+    })
+  } else {
+    await prisma.conversation.update({
+      where: { id: conversation.id },
+      data: { lastMessageAt: timestamp, lastMessageText: text || '[mensagem]' },
+    })
+  }
+
+  await prisma.message.create({
+    data: {
+      conversationId: conversation.id,
+      externalId,
+      direction: 'OUTBOUND',
+      type: 'TEXT',
+      content: text,
+      status: 'DELIVERED',
+      timestamp,
+    },
+  })
+}
+
+async function handleReaction(data: Record<string, any>, instanceName: string, apiKeyHeader = '') {
+  // Evolution API can send reactions inside messages.upsert (reactionMessage type)
+  // or as a dedicated messages.reaction event
+  const key = data.key
+  const reaction = data.reaction
+
+  if (!reaction) return
+
+  const remoteJid = (key?.remoteJid || reaction?.key?.remoteJid) as string
+  if (!remoteJid || remoteJid.includes('@g.us') || remoteJid.includes('@lid')) return
+
+  const emoji = (reaction.text || reaction.emoji || '') as string
+  const targetExternalId = (reaction.key?.id || '') as string  // ID of the message being reacted to
+  const fromMe = !!(key?.fromMe)
+  const externalId = (key?.id || '') as string
+  const timestamp = new Date((data.messageTimestamp as number) * 1000 || Date.now())
+
+  let whatsappInstance = await prisma.whatsappInstance.findUnique({ where: { instanceName }, include: { clinic: true } })
+  if (!whatsappInstance && apiKeyHeader) {
+    whatsappInstance = await prisma.whatsappInstance.findFirst({ where: { apiKey: apiKeyHeader }, include: { clinic: true } })
+  }
+  if (!whatsappInstance) return
+
+  const conversation = await prisma.conversation.findUnique({ where: { remoteJid } })
+  if (!conversation) return
+
+  // Avoid duplicate reactions (same sender reacting to same message)
+  if (externalId) {
+    const dup = await prisma.message.findUnique({ where: { externalId } })
+    if (dup) return
+  }
+
+  await prisma.message.create({
+    data: {
+      conversationId: conversation.id,
+      externalId: externalId || undefined,
+      direction: fromMe ? 'OUTBOUND' : 'INBOUND',
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      type: 'REACTION' as any,
+      content: emoji,
+      mediaName: targetExternalId,
+      status: 'DELIVERED',
+      timestamp,
+    },
+  })
 }
 
 async function handleConnectionUpdate(data: Record<string, unknown>, instanceName: string) {

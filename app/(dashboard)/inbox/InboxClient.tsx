@@ -4,8 +4,8 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { formatMessageTime, getInitials, truncate, cn } from '@/lib/utils'
 import {
   Search, Send, Paperclip, Phone, MoreVertical,
-  Bot, BotOff, FileText, Mic, MicOff, X, Check, CheckCheck,
-  MessageSquare, Download, Image as ImageIcon, StopCircle,
+  Bot, BotOff, FileText, Mic, X, Check, CheckCheck,
+  MessageSquare, Download, Image as ImageIcon,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -52,6 +52,8 @@ export function InboxClient({ session }: { session: SessionUser }) {
   const [loadingMessages, setLoadingMessages] = useState(false)
   const [agents, setAgents] = useState<{ id: string; name: string }[]>([])
   const [showAgentMenu, setShowAgentMenu] = useState(false)
+  // Profile cache: remoteJid → { name, pictureUrl }
+  const [profiles, setProfiles] = useState<Record<string, { name: string; pictureUrl: string }>>({})
   // Audio recording state
   const [recording, setRecording] = useState(false)
   const [recordingSeconds, setRecordingSeconds] = useState(0)
@@ -69,13 +71,40 @@ export function InboxClient({ session }: { session: SessionUser }) {
   // Keep ref in sync for use inside intervals
   useEffect(() => { selectedConvRef.current = selectedConv }, [selectedConv])
 
-  const fetchConversations = useCallback(async (silent = false) => {
+  const enrichProfiles = useCallback(async (convs: Conversation[]) => {
+    if (convs.length === 0) return
+    const jids = convs.map(c => c.remoteJid)
+    try {
+      const res = await fetch('/api/whatsapp/enrich', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jids }),
+      })
+      if (!res.ok) return
+      const data = await res.json()
+      const incoming: Record<string, { name: string; pictureUrl: string }> = data.profiles || {}
+      if (Object.keys(incoming).length === 0) return
+      setProfiles(prev => ({ ...prev, ...incoming }))
+    } catch {
+      // silent fallback — never block the inbox
+    }
+  }, [])
+
+  const fetchConversations = useCallback(async () => {
     const res = await fetch(`/api/conversations?search=${encodeURIComponent(searchQuery)}`)
     if (res.ok) {
       const data = await res.json()
-      setConversations(data.conversations)
+      const next: Conversation[] = data.conversations
+      setConversations(prev => {
+        const sig = (arr: Conversation[]) =>
+          arr.map(c => `${c.id}|${c.unreadCount}|${c.lastMessageAt}|${c.lastMessageText}`).join(',')
+        if (sig(prev) === sig(next)) return prev
+        // Enrich profiles whenever the conversation list actually changes
+        enrichProfiles(next)
+        return next
+      })
     }
-  }, [searchQuery])
+  }, [searchQuery, enrichProfiles])
 
   const fetchMessages = useCallback(async (convId: string, silent = false) => {
     if (!silent) setLoadingMessages(true)
@@ -100,7 +129,7 @@ export function InboxClient({ session }: { session: SessionUser }) {
     fetch('/api/agents').then(r => r.json()).then(d => setAgents(d.agents || []))
 
     // Poll conversations every 5s
-    convPollingRef.current = setInterval(() => fetchConversations(true), 5000)
+    convPollingRef.current = setInterval(() => fetchConversations(), 5000)
     return () => {
       if (convPollingRef.current) clearInterval(convPollingRef.current)
     }
@@ -232,14 +261,23 @@ export function InboxClient({ session }: { session: SessionUser }) {
   }
 
   const displayName = (conv: Conversation) =>
-    conv.patient?.name || conv.remoteName || conv.remotePhone
+    conv.patient?.name ||
+    profiles[conv.remoteJid]?.name ||
+    conv.remoteName ||
+    conv.remotePhone
+
+  const avatarUrl = (conv: Conversation) =>
+    conv.patient?.avatarUrl ||
+    profiles[conv.remoteJid]?.pictureUrl ||
+    conv.remoteAvatarUrl ||
+    null
 
   const totalUnread = conversations.reduce((s, c) => s + c.unreadCount, 0)
 
   return (
-    <div className="flex h-full bg-gray-50">
+    <div className="flex h-full min-h-0 bg-gray-50">
       {/* Conversation List */}
-      <div className="w-80 flex-shrink-0 bg-white border-r border-gray-100 flex flex-col">
+      <div className="w-80 flex-shrink-0 bg-white border-r border-gray-100 flex flex-col min-h-0">
         {/* Header */}
         <div className="px-4 py-4 border-b border-gray-100">
           <div className="flex items-center justify-between mb-3">
@@ -281,7 +319,7 @@ export function InboxClient({ session }: { session: SessionUser }) {
         </div>
 
         {/* List */}
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto min-h-0">
           {conversations.length === 0 ? (
             <div className="py-12 text-center text-gray-400">
               <MessageSquare className="w-8 h-8 mx-auto mb-2 opacity-30" />
@@ -298,9 +336,7 @@ export function InboxClient({ session }: { session: SessionUser }) {
                 )}
               >
                 <div className="relative flex-shrink-0">
-                  <div className="w-11 h-11 rounded-full bg-sky-100 flex items-center justify-center text-sky-600 font-semibold text-sm">
-                    {getInitials(displayName(conv))}
-                  </div>
+                  <ContactAvatar url={avatarUrl(conv)} name={displayName(conv)} size={11} />
                   {conv.aiEnabled && (
                     <div className="absolute -bottom-0.5 -right-0.5 w-4 h-4 bg-green-500 rounded-full flex items-center justify-center">
                       <Bot className="w-2.5 h-2.5 text-white" />
@@ -333,12 +369,10 @@ export function InboxClient({ session }: { session: SessionUser }) {
 
       {/* Chat Area */}
       {selectedConv ? (
-        <div className="flex-1 flex flex-col min-w-0">
+        <div className="flex-1 flex flex-col min-w-0 min-h-0">
           {/* Chat Header */}
           <div className="flex items-center gap-3 px-5 py-3.5 bg-white border-b border-gray-100 shadow-sm">
-            <div className="w-10 h-10 rounded-full bg-sky-100 flex items-center justify-center text-sky-600 font-semibold text-sm flex-shrink-0">
-              {getInitials(displayName(selectedConv))}
-            </div>
+            <ContactAvatar url={avatarUrl(selectedConv)} name={displayName(selectedConv)} size={10} />
             <div className="flex-1 min-w-0">
               <p className="font-semibold text-gray-900 truncate">{displayName(selectedConv)}</p>
               <p className="text-xs text-gray-400">{selectedConv.remotePhone}</p>
@@ -394,7 +428,7 @@ export function InboxClient({ session }: { session: SessionUser }) {
 
           {/* Messages */}
           <div
-            className="flex-1 overflow-y-auto p-5 space-y-2"
+            className="flex-1 overflow-y-auto min-h-0 p-5 space-y-2"
             style={{ backgroundImage: 'radial-gradient(circle, #e5e7eb 1px, transparent 1px)', backgroundSize: '24px 24px', backgroundColor: '#f8fafc' }}
           >
             {loadingMessages ? (
@@ -407,7 +441,26 @@ export function InboxClient({ session }: { session: SessionUser }) {
               </div>
             ) : (
               messages.map((msg) => (
-                <MessageBubble key={msg.id} message={msg} currentUserId={session.id} />
+                <MessageBubble
+                  key={msg.id}
+                  message={msg}
+                  currentUserId={session.id}
+                  conversationId={selectedConv.id}
+                  onReact={async (targetExternalId, emoji) => {
+                    try {
+                      const res = await fetch('/api/whatsapp/react', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ conversationId: selectedConv.id, targetExternalId, emoji }),
+                      })
+                      const data = await res.json()
+                      if (!res.ok) throw new Error(data.error)
+                      setMessages(prev => [...prev, data.message])
+                    } catch {
+                      toast.error('Erro ao enviar reação')
+                    }
+                  }}
+                />
               ))
             )}
             <div ref={messagesEndRef} />
@@ -495,11 +548,70 @@ export function InboxClient({ session }: { session: SessionUser }) {
   )
 }
 
-function MessageBubble({ message, currentUserId }: { message: Message; currentUserId: string }) {
+function ContactAvatar({ url, name, size }: { url: string | null; name: string; size: number }) {
+  const [failed, setFailed] = useState(false)
+  const px = `${size * 4}px` // Tailwind w-{size} = size*4px
+
+  if (url && !failed) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={url}
+        alt={name}
+        onError={() => setFailed(true)}
+        className="rounded-full object-cover flex-shrink-0"
+        style={{ width: px, height: px }}
+      />
+    )
+  }
+
+  return (
+    <div
+      className="rounded-full bg-sky-100 flex items-center justify-center text-sky-600 font-semibold flex-shrink-0"
+      style={{ width: px, height: px, fontSize: size >= 11 ? '0.875rem' : '0.75rem' }}
+    >
+      {getInitials(name)}
+    </div>
+  )
+}
+
+const REACTION_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🙏', '🔥', '👏']
+
+function MessageBubble({
+  message,
+  onReact,
+}: {
+  message: Message
+  currentUserId: string
+  conversationId: string
+  onReact: (targetExternalId: string, emoji: string) => void
+}) {
+  const [showReactPicker, setShowReactPicker] = useState(false)
   const isOut = message.direction === 'OUTBOUND'
+  const isReaction = message.type === 'REACTION'
   const mediaProxyUrl = message.externalId
     ? `/api/whatsapp/media?id=${encodeURIComponent(message.externalId)}`
     : null
+
+  // Reaction bubble — compact emoji display
+  if (isReaction) {
+    return (
+      <div className={cn('flex', isOut ? 'justify-end' : 'justify-start')}>
+        <div className={cn('flex flex-col gap-0.5', isOut ? 'items-end' : 'items-start')}>
+          <div className={cn(
+            'flex items-center gap-2 px-3 py-1.5 rounded-full border text-sm shadow-sm',
+            isOut
+              ? 'bg-sky-50 border-sky-200 text-sky-700'
+              : 'bg-white border-gray-200 text-gray-700'
+          )}>
+            <span className="text-xl leading-none">{message.content}</span>
+            <span className="text-xs opacity-60">{isOut ? 'Reação Enviada' : 'Reagiu'}</span>
+          </div>
+          <span className="text-xs text-gray-400 px-1">{formatMessageTime(message.timestamp)}</span>
+        </div>
+      </div>
+    )
+  }
 
   const statusIcon = () => {
     if (!isOut) return null
@@ -522,14 +634,11 @@ function MessageBubble({ message, currentUserId }: { message: Message; currentUs
                 alt="imagem"
                 className="rounded-lg max-w-xs max-h-60 object-cover cursor-pointer"
                 onClick={() => window.open(mediaProxyUrl, '_blank')}
-                onError={e => {
-                  (e.target as HTMLImageElement).style.display = 'none'
-                }}
+                onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
               />
             ) : (
               <div className="flex items-center gap-2 opacity-70 py-1">
-                <ImageIcon className="w-5 h-5" />
-                <span className="text-sm">Imagem</span>
+                <ImageIcon className="w-5 h-5" /><span className="text-sm">Imagem</span>
               </div>
             )}
             {message.content && <p className="text-sm mt-1">{message.content}</p>}
@@ -540,12 +649,11 @@ function MessageBubble({ message, currentUserId }: { message: Message; currentUs
           <div className="min-w-48">
             {mediaProxyUrl ? (
               <audio controls className="max-w-xs h-10" style={{ minWidth: '200px' }}>
-                <source src={mediaProxyUrl} />
+                <source src={mediaProxyUrl} type={message.mediaMimeType || 'audio/ogg'} />
               </audio>
             ) : (
               <div className="flex items-center gap-2 opacity-70">
-                <Mic className="w-4 h-4" />
-                <span className="text-sm">Áudio</span>
+                <Mic className="w-4 h-4" /><span className="text-sm">Áudio</span>
               </div>
             )}
           </div>
@@ -559,14 +667,8 @@ function MessageBubble({ message, currentUserId }: { message: Message; currentUs
               <p className="text-xs opacity-70">{message.mediaMimeType?.split('/')[1]?.toUpperCase()}</p>
             </div>
             {mediaProxyUrl && (
-              <a
-                href={mediaProxyUrl}
-                download={message.mediaName || 'documento'}
-                target="_blank"
-                rel="noreferrer"
-                className="p-1 rounded hover:bg-black/10 transition"
-                onClick={e => e.stopPropagation()}
-              >
+              <a href={mediaProxyUrl} download={message.mediaName || 'documento'} target="_blank" rel="noreferrer"
+                className="p-1 rounded hover:bg-black/10 transition" onClick={e => e.stopPropagation()}>
                 <Download className="w-4 h-4 flex-shrink-0" />
               </a>
             )}
@@ -581,8 +683,7 @@ function MessageBubble({ message, currentUserId }: { message: Message; currentUs
               </video>
             ) : (
               <div className="flex items-center gap-2 opacity-70">
-                <FileText className="w-5 h-5" />
-                <span className="text-sm">Vídeo</span>
+                <FileText className="w-5 h-5" /><span className="text-sm">Vídeo</span>
               </div>
             )}
           </div>
@@ -597,25 +698,70 @@ function MessageBubble({ message, currentUserId }: { message: Message; currentUs
   }
 
   return (
-    <div className={cn('flex', isOut ? 'justify-end' : 'justify-start')}>
+    <div
+      className={cn('flex group', isOut ? 'justify-end' : 'justify-start')}
+      onMouseLeave={() => setShowReactPicker(false)}
+    >
       <div className={cn('max-w-[75%] flex flex-col', isOut ? 'items-end' : 'items-start')}>
         {message.isFromAI && (
           <span className="text-xs text-green-500 mb-1 flex items-center gap-1">
             <Bot className="w-3 h-3" /> IA
           </span>
         )}
-        <div className={cn(
-          'rounded-2xl px-3 py-2 shadow-sm',
-          isOut
-            ? 'bg-sky-500 text-white rounded-tr-sm'
-            : 'bg-white text-gray-900 rounded-tl-sm border border-gray-100'
-        )}>
-          {renderContent()}
-          <div className={cn('flex items-center gap-1 mt-1', isOut ? 'justify-end' : 'justify-start')}>
-            <span className={cn('text-xs', isOut ? 'text-white/70' : 'text-gray-400')}>
-              {formatMessageTime(message.timestamp)}
-            </span>
-            {statusIcon()}
+        <div className="relative">
+          {/* Reaction picker trigger — visible on hover */}
+          {message.externalId && (
+            <div className={cn(
+              'absolute top-1 opacity-0 group-hover:opacity-100 transition-opacity z-10',
+              isOut ? '-left-8' : '-right-8'
+            )}>
+              <button
+                onClick={() => setShowReactPicker(v => !v)}
+                className="w-6 h-6 rounded-full bg-white border border-gray-200 shadow-sm flex items-center justify-center text-xs hover:bg-gray-50"
+                title="Reagir"
+              >
+                😊
+              </button>
+              {showReactPicker && (
+                <div className={cn(
+                  'absolute bottom-8 bg-white border border-gray-200 rounded-2xl shadow-lg px-2 py-1.5 flex gap-1 z-20',
+                  isOut ? 'right-0' : 'left-0'
+                )}>
+                  {REACTION_EMOJIS.map(emoji => (
+                    <button
+                      key={emoji}
+                      onClick={() => {
+                        onReact(message.externalId!, emoji)
+                        setShowReactPicker(false)
+                      }}
+                      className="text-xl hover:scale-125 transition-transform p-0.5"
+                    >
+                      {emoji}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className={cn(
+            'rounded-2xl px-3 py-2 shadow-sm',
+            isOut
+              ? 'bg-sky-500 text-white rounded-tr-sm'
+              : 'bg-white text-gray-900 rounded-tl-sm border border-gray-100'
+          )}>
+            {isOut && message.type === 'TEXT' && (
+              <p className={cn('text-xs mb-1', isOut ? 'text-white/60' : 'text-gray-400')}>
+                Mensagem Enviada
+              </p>
+            )}
+            {renderContent()}
+            <div className={cn('flex items-center gap-1 mt-1', isOut ? 'justify-end' : 'justify-start')}>
+              <span className={cn('text-xs', isOut ? 'text-white/70' : 'text-gray-400')}>
+                {formatMessageTime(message.timestamp)}
+              </span>
+              {statusIcon()}
+            </div>
           </div>
         </div>
       </div>

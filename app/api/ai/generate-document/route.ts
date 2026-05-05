@@ -35,11 +35,13 @@ export async function POST(req: NextRequest) {
 
     const content = await generateDocument({
       type: typeMap[body.type] || 'prescription',
+      documentTitle: body.title || undefined,
       patientName: patient.name,
       patientAge: age,
       doctorName: user.name,
       doctorCRM: user.crm || undefined,
       clinicName: user.clinic.name,
+      clinicType: user.clinic.clinicType || null,
       details: body.details,
     })
 

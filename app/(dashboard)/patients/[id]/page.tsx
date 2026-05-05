@@ -28,10 +28,23 @@ export default async function PatientPage({ params }: { params: Promise<{ id: st
 
   if (!patient) notFound()
 
-  const doctors = await prisma.user.findMany({
-    where: { clinicId: session!.clinicId, active: true, role: { in: ['DOCTOR', 'ADMIN'] } },
-    select: { id: true, name: true, crm: true },
-  })
+  const [doctors, clinic] = await Promise.all([
+    prisma.user.findMany({
+      where: { clinicId: session!.clinicId, active: true, role: { in: ['DOCTOR', 'ADMIN'] } },
+      select: { id: true, name: true, crm: true },
+    }),
+    prisma.clinic.findUnique({
+      where: { id: session!.clinicId },
+      select: { clinicType: true },
+    }),
+  ])
 
-  return <PatientProfile patient={JSON.parse(JSON.stringify(patient))} doctors={doctors} session={session!} />
+  return (
+    <PatientProfile
+      patient={JSON.parse(JSON.stringify(patient))}
+      doctors={doctors}
+      session={session!}
+      clinicType={clinic?.clinicType ?? null}
+    />
+  )
 }

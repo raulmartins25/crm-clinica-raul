@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
@@ -10,6 +10,7 @@ import {
   Plus, Activity, Heart, Thermometer, Weight, Ruler, Droplets,
   MessageSquare, Loader2, ChevronDown, Edit, Save, X,
 } from 'lucide-react'
+import { getMedicalRecordConfig, type FieldConfig } from '@/lib/medicalRecordConfig'
 
 interface Props {
   patient: {
@@ -26,6 +27,7 @@ interface Props {
       diagnosis: string | null; treatment: string | null; observations: string | null
       bloodPressure: string | null; heartRate: number | null; temperature: number | null
       weight: number | null; height: number | null; oxygenSat: number | null
+      extraData: Record<string, unknown> | null
       doctor: { name: string; crm: string | null }
     }>
     documents: Array<{
@@ -35,9 +37,19 @@ interface Props {
   }
   doctors: Array<{ id: string; name: string; crm: string | null }>
   session: { id: string; name: string; role: string }
+  clinicType?: string | null
 }
 
-export function PatientProfile({ patient, doctors, session }: Props) {
+const ALL_VITALS = [
+  { key: 'bloodPressure', label: 'PA (mmHg)', icon: Activity, placeholder: '120/80' },
+  { key: 'heartRate', label: 'FC (bpm)', icon: Heart, placeholder: '72' },
+  { key: 'temperature', label: 'Temp. (°C)', icon: Thermometer, placeholder: '36.5' },
+  { key: 'weight', label: 'Peso (kg)', icon: Weight, placeholder: '70' },
+  { key: 'height', label: 'Altura (cm)', icon: Ruler, placeholder: '170' },
+  { key: 'oxygenSat', label: 'SpO2 (%)', icon: Activity, placeholder: '98' },
+] as const
+
+export function PatientProfile({ patient, doctors, session, clinicType }: Props) {
   const router = useRouter()
   const [activeTab, setActiveTab] = useState<'overview' | 'records' | 'appointments' | 'documents'>('overview')
   const [showNewRecord, setShowNewRecord] = useState(false)
@@ -48,6 +60,34 @@ export function PatientProfile({ patient, doctors, session }: Props) {
     heartRate: '', temperature: '', weight: '', height: '', oxygenSat: '',
     doctorId: session.id,
   })
+  const [extraData, setExtraData] = useState<Record<string, string>>({})
+
+  const config = getMedicalRecordConfig(clinicType)
+  const visibleVitals = ALL_VITALS.filter(v => config.showVitals[v.key as keyof typeof config.showVitals])
+
+  // Calculate DPP and semanasGestacao from DUM (GINECOLOGIA)
+  useEffect(() => {
+    if (!extraData.dum) return
+    const dum = new Date(extraData.dum)
+    if (isNaN(dum.getTime())) return
+    const dpp = new Date(dum.getTime() + 280 * 24 * 60 * 60 * 1000)
+    const semanas = Math.max(0, Math.floor((Date.now() - dum.getTime()) / (7 * 24 * 60 * 60 * 1000)))
+    setExtraData(p => ({
+      ...p,
+      dpp: dpp.toISOString().split('T')[0],
+      semanasGestacao: String(semanas),
+    }))
+  }, [extraData.dum])
+
+  // Calculate IMC from weight and height (NUTRICAO)
+  useEffect(() => {
+    const weight = parseFloat(recordForm.weight)
+    const height = parseFloat(recordForm.height)
+    if (weight > 0 && height > 0) {
+      const heightM = height / 100
+      setExtraData(p => ({ ...p, imc: (weight / (heightM * heightM)).toFixed(1) }))
+    }
+  }, [recordForm.weight, recordForm.height])
 
   const tabs = [
     { id: 'overview', label: 'Visão Geral', icon: Activity },
@@ -64,7 +104,7 @@ export function PatientProfile({ patient, doctors, session }: Props) {
       const res = await fetch(`/api/patients/${patient.id}/records`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(recordForm),
+        body: JSON.stringify({ ...recordForm, extraData }),
       })
       if (!res.ok) throw new Error('Erro ao salvar')
       toast.success('Prontuário salvo com sucesso!')
@@ -217,30 +257,27 @@ export function PatientProfile({ patient, doctors, session }: Props) {
                 </button>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* Vitals */}
-                <div className="md:col-span-2">
-                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Sinais Vitais</p>
-                  <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-                    {[
-                      { key: 'bloodPressure', label: 'PA (mmHg)', icon: Activity, placeholder: '120/80' },
-                      { key: 'heartRate', label: 'FC (bpm)', icon: Heart, placeholder: '72' },
-                      { key: 'temperature', label: 'Temp. (°C)', icon: Thermometer, placeholder: '36.5' },
-                      { key: 'weight', label: 'Peso (kg)', icon: Weight, placeholder: '70' },
-                      { key: 'oxygenSat', label: 'SpO2 (%)', icon: Activity, placeholder: '98' },
-                    ].map(f => (
-                      <div key={f.key}>
-                        <label className="text-xs text-gray-500 mb-1 block">{f.label}</label>
-                        <input
-                          value={recordForm[f.key as keyof typeof recordForm]}
-                          onChange={e => setRecordForm(p => ({ ...p, [f.key]: e.target.value }))}
-                          placeholder={f.placeholder}
-                          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
-                        />
-                      </div>
-                    ))}
+                {/* Sinais Vitais */}
+                {visibleVitals.length > 0 && (
+                  <div className="md:col-span-2">
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Sinais Vitais</p>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
+                      {visibleVitals.map(f => (
+                        <div key={f.key}>
+                          <label className="text-xs text-gray-500 mb-1 block">{f.label}</label>
+                          <input
+                            value={recordForm[f.key as keyof typeof recordForm]}
+                            onChange={e => setRecordForm(p => ({ ...p, [f.key]: e.target.value }))}
+                            placeholder={f.placeholder}
+                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
+                          />
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                </div>
-                {/* Clinical fields */}
+                )}
+
+                {/* Campos clínicos base */}
                 {[
                   { key: 'chiefComplaint', label: 'Queixa Principal' },
                   { key: 'anamnesis', label: 'Anamnese' },
@@ -280,7 +317,29 @@ export function PatientProfile({ patient, doctors, session }: Props) {
                     ))}
                   </select>
                 </div>
+
+                {/* Seção extra por nicho */}
+                {config.extraSection && (
+                  <div className="md:col-span-2">
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3 mt-2">
+                      {config.extraSection.title}
+                    </p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {config.extraSection.fields.map(f => (
+                        <div key={f.key} className={f.colSpan === 'full' ? 'md:col-span-2' : ''}>
+                          <label className="text-sm font-medium text-gray-700 mb-1.5 block">{f.label}</label>
+                          <ExtraField
+                            field={f}
+                            value={extraData[f.key] ?? ''}
+                            onChange={val => setExtraData(p => ({ ...p, [f.key]: val }))}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
+
               <div className="flex justify-end gap-2 mt-5">
                 <button
                   onClick={() => setShowNewRecord(false)}
@@ -337,6 +396,18 @@ export function PatientProfile({ patient, doctors, session }: Props) {
                       <p className="text-sm text-gray-700 whitespace-pre-wrap">{f.value}</p>
                     </div>
                   ))}
+                  {record.extraData && Object.keys(record.extraData).length > 0 && (
+                    <div className="md:col-span-2 border-t border-gray-100 pt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {Object.entries(record.extraData).map(([k, v]) =>
+                        v ? (
+                          <div key={k}>
+                            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">{k}</p>
+                            <p className="text-sm text-gray-700 whitespace-pre-wrap">{String(v)}</p>
+                          </div>
+                        ) : null
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             ))
@@ -411,6 +482,49 @@ export function PatientProfile({ patient, doctors, session }: Props) {
         </div>
       )}
     </div>
+  )
+}
+
+function ExtraField({ field, value, onChange }: { field: FieldConfig; value: string; onChange: (v: string) => void }) {
+  const baseClass = 'w-full px-3.5 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-500'
+  const readonlyClass = 'bg-gray-50 text-gray-500 cursor-not-allowed'
+
+  if (field.type === 'textarea') {
+    return (
+      <textarea
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        rows={3}
+        readOnly={field.readonly}
+        className={cn(baseClass, 'resize-none', field.readonly && readonlyClass)}
+      />
+    )
+  }
+
+  if (field.type === 'select' && field.options) {
+    return (
+      <select
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        className={cn(baseClass, field.readonly && readonlyClass)}
+        disabled={field.readonly}
+      >
+        {field.options.map(opt => (
+          <option key={opt} value={opt}>{opt || '— selecione —'}</option>
+        ))}
+      </select>
+    )
+  }
+
+  return (
+    <input
+      type={field.type}
+      value={value}
+      onChange={e => onChange(e.target.value)}
+      placeholder={field.placeholder}
+      readOnly={field.readonly}
+      className={cn(baseClass, field.readonly && readonlyClass)}
+    />
   )
 }
 

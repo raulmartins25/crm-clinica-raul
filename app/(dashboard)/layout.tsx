@@ -9,6 +9,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   const clinic = await prisma.clinic.findUnique({ where: { id: session.clinicId } })
   if (!clinic) redirect('/login')
+  if (!clinic.onboardingCompleted) redirect('/onboarding')
 
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">
@@ -21,7 +22,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
         }}
         clinicName={clinic.name}
       />
-      <main className="flex-1 overflow-auto">{children}</main>
+      <main className="flex-1 overflow-hidden flex flex-col">{children}</main>
     </div>
   )
 }
