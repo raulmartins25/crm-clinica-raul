@@ -11,6 +11,11 @@ import {
   MessageSquare, Loader2, ChevronDown, Edit, Save, X,
 } from 'lucide-react'
 import { getMedicalRecordConfig, type FieldConfig } from '@/lib/medicalRecordConfig'
+import { Odontogram, type OdontogramData } from '@/components/Odontogram'
+import { AnthropometryPanel } from '@/components/AnthropometryPanel'
+import { GrowthChart } from '@/components/GrowthChart'
+import { LabResultsPanel, LAB_KEY_LABELS } from '@/components/LabResultsPanel'
+import { BodyMap, type BodyMapData } from '@/components/BodyMap'
 
 interface Props {
   patient: {
@@ -61,6 +66,8 @@ export function PatientProfile({ patient, doctors, session, clinicType }: Props)
     doctorId: session.id,
   })
   const [extraData, setExtraData] = useState<Record<string, string>>({})
+  const [odontogramData, setOdontogramData] = useState<OdontogramData>({})
+  const [bodyMapData, setBodyMapData] = useState<BodyMapData>({})
 
   const config = getMedicalRecordConfig(clinicType)
   const visibleVitals = ALL_VITALS.filter(v => config.showVitals[v.key as keyof typeof config.showVitals])
@@ -104,7 +111,14 @@ export function PatientProfile({ patient, doctors, session, clinicType }: Props)
       const res = await fetch(`/api/patients/${patient.id}/records`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...recordForm, extraData }),
+        body: JSON.stringify({
+          ...recordForm,
+          extraData: clinicType === 'ODONTOLOGIA'
+            ? { ...extraData, odontograma: odontogramData }
+            : clinicType === 'DERMATOLOGIA'
+            ? { ...extraData, mapaLesoes: bodyMapData }
+            : extraData,
+        }),
       })
       if (!res.ok) throw new Error('Erro ao salvar')
       toast.success('Prontuário salvo com sucesso!')
@@ -248,6 +262,39 @@ export function PatientProfile({ patient, doctors, session, clinicType }: Props)
       {/* Records Tab */}
       {activeTab === 'records' && (
         <div className="space-y-4">
+          {/* Growth curve — PEDIATRIA only, always visible in this tab */}
+          {clinicType === 'PEDIATRIA' && (
+            <GrowthChart
+              gender={patient.gender === 'M' ? 'M' : patient.gender === 'F' ? 'F' : null}
+              measurements={patient.medicalRecords
+                .filter(r => r.weight || r.height)
+                .map(r => {
+                  const ageYears = patient.birthDate
+                    ? (new Date(r.createdAt).getTime() - new Date(patient.birthDate).getTime()) /
+                      (365.25 * 24 * 60 * 60 * 1000)
+                    : 0
+                  return {
+                    age: Math.round(ageYears * 10) / 10,
+                    weight: r.weight ?? 0,
+                    height: r.height ?? 0,
+                    date: r.createdAt,
+                  }
+                })
+                .filter(m => m.age >= 0 && m.age <= 19)
+              }
+            />
+          )}
+
+          {/* Lab results panel — ENDOCRINOLOGIA only */}
+          {clinicType === 'ENDOCRINOLOGIA' && (
+            <LabResultsPanel
+              records={patient.medicalRecords.map(r => ({
+                createdAt: r.createdAt,
+                extraData: r.extraData,
+              }))}
+            />
+          )}
+
           {showNewRecord && (
             <div className="bg-white rounded-xl border border-sky-200 shadow-sm p-6">
               <div className="flex items-center justify-between mb-5">
@@ -324,6 +371,31 @@ export function PatientProfile({ patient, doctors, session, clinicType }: Props)
                     <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3 mt-2">
                       {config.extraSection.title}
                     </p>
+                    {clinicType === 'ODONTOLOGIA' && (
+                      <div className="mb-4">
+                        <Odontogram value={odontogramData} onChange={setOdontogramData} />
+                      </div>
+                    )}
+                    {clinicType === 'NUTRICAO' && (
+                      <div className="mb-4">
+                        <AnthropometryPanel
+                          weight={parseFloat(recordForm.weight) || null}
+                          height={parseFloat(recordForm.height) || null}
+                          imc={parseFloat(extraData.imc ?? '') || null}
+                          birthDate={patient.birthDate}
+                          gender={patient.gender ?? null}
+                          sexoBiologico={extraData.sexoBiologico ?? ''}
+                          nivelAtividade={extraData.nivelAtividade ?? '1.2'}
+                          onSexoBiologicoChange={v => setExtraData(p => ({ ...p, sexoBiologico: v }))}
+                          onNivelAtividadeChange={v => setExtraData(p => ({ ...p, nivelAtividade: v }))}
+                        />
+                      </div>
+                    )}
+                    {clinicType === 'DERMATOLOGIA' && (
+                      <div className="mb-4">
+                        <BodyMap value={bodyMapData} onChange={setBodyMapData} />
+                      </div>
+                    )}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       {config.extraSection.fields.map(f => (
                         <div key={f.key} className={f.colSpan === 'full' ? 'md:col-span-2' : ''}>
@@ -398,14 +470,44 @@ export function PatientProfile({ patient, doctors, session, clinicType }: Props)
                   ))}
                   {record.extraData && Object.keys(record.extraData).length > 0 && (
                     <div className="md:col-span-2 border-t border-gray-100 pt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {Object.entries(record.extraData).map(([k, v]) =>
-                        v ? (
-                          <div key={k}>
-                            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">{k}</p>
-                            <p className="text-sm text-gray-700 whitespace-pre-wrap">{String(v)}</p>
-                          </div>
-                        ) : null
+                      {record.extraData.odontograma != null && (
+                        <div className="md:col-span-2">
+                          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Odontograma</p>
+                          <Odontogram value={record.extraData.odontograma as OdontogramData} readOnly />
+                        </div>
                       )}
+                      {clinicType === 'NUTRICAO' && (record.weight || record.height) && (
+                        <div className="md:col-span-2">
+                          <AnthropometryPanel
+                            weight={record.weight}
+                            height={record.height}
+                            imc={record.extraData.imc ? parseFloat(String(record.extraData.imc)) : null}
+                            birthDate={patient.birthDate}
+                            gender={patient.gender ?? null}
+                            sexoBiologico={String(record.extraData.sexoBiologico ?? '')}
+                            nivelAtividade={String(record.extraData.nivelAtividade ?? '1.2')}
+                            readOnly
+                          />
+                        </div>
+                      )}
+                      {clinicType === 'DERMATOLOGIA' && record.extraData.mapaLesoes != null && (
+                        <div className="md:col-span-2">
+                          <BodyMap value={record.extraData.mapaLesoes as BodyMapData} readOnly />
+                        </div>
+                      )}
+                      {Object.entries(record.extraData).map(([k, v]) => {
+                        const skipKeys = ['odontograma', 'imc', 'sexoBiologico', 'nivelAtividade', 'mapaLesoes']
+                        if (skipKeys.includes(k) || !v) return null
+                        const labInfo = clinicType === 'ENDOCRINOLOGIA' ? LAB_KEY_LABELS[k] : null
+                        const label = labInfo ? labInfo.label : k
+                        const display = labInfo ? `${String(v)} ${labInfo.unit}` : String(v)
+                        return (
+                          <div key={k}>
+                            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">{label}</p>
+                            <p className="text-sm text-gray-700 whitespace-pre-wrap">{display}</p>
+                          </div>
+                        )
+                      })}
                     </div>
                   )}
                 </div>

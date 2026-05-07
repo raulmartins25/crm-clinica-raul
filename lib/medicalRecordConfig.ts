@@ -34,7 +34,6 @@ export function getMedicalRecordConfig(clinicType?: string | null): MedicalRecor
         extraSection: {
           title: 'Odontologia',
           fields: [
-            { key: 'dentes', label: 'Dente(s) Envolvido(s)', type: 'text', placeholder: 'ex: 11, 21, 36' },
             { key: 'procedimento', label: 'Procedimento Realizado', type: 'text', placeholder: 'ex: Extração, Canal' },
             { key: 'materiais', label: 'Materiais Utilizados', type: 'text' },
             { key: 'planoTratamento', label: 'Plano de Tratamento', type: 'textarea', colSpan: 'full' },
@@ -80,7 +79,6 @@ export function getMedicalRecordConfig(clinicType?: string | null): MedicalRecor
           title: 'Avaliação Dermatológica',
           fields: [
             { key: 'tipoPele', label: 'Tipo de Pele', type: 'select', options: ['', 'Normal', 'Seca', 'Oleosa', 'Mista', 'Sensível'] },
-            { key: 'regiaoAfetada', label: 'Região Afetada', type: 'text' },
             { key: 'descricaoLesoes', label: 'Descrição das Lesões', type: 'textarea', colSpan: 'full' },
             { key: 'procedimentoEstetico', label: 'Procedimento Estético', type: 'text' },
             { key: 'protocoloUtilizado', label: 'Protocolo Utilizado', type: 'text' },
