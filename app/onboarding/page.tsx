@@ -11,5 +11,15 @@ export default async function OnboardingPage() {
   if (!clinic) redirect('/login')
   if (clinic.onboardingCompleted) redirect('/dashboard')
 
-  return <OnboardingClient clinic={clinic} />
+  return <OnboardingClient clinic={{
+    name: clinic.name,
+    cnpj: clinic.cnpj ?? undefined,
+    phone: clinic.phone ?? undefined,
+    email: clinic.email ?? undefined,
+    city: clinic.city ?? undefined,
+    state: clinic.state ?? undefined,
+    logoUrl: clinic.logoUrl ?? undefined,
+    responsavelTecnico: clinic.responsavelTecnico ?? undefined,
+    numeroConselho: clinic.numeroConselho ?? undefined,
+  }} />
 }

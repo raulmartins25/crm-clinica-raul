@@ -42,7 +42,7 @@ export default async function AdminPreviewPage({ searchParams }: Props) {
 
       {/* Dashboard content */}
       <div className="flex-1 overflow-y-auto">
-        <DashboardView data={data} sessionName={session.name} />
+        <DashboardView data={data} sessionName={session.name} sessionRole={session.role} />
       </div>
     </div>
   )

@@ -3,16 +3,22 @@
 import { useState, useEffect, useCallback } from 'react'
 import { toast } from 'sonner'
 import { formatDate } from '@/lib/utils'
+import { format } from 'date-fns'
+import { ptBR } from 'date-fns/locale'
 import {
   FileText, Plus, Search, Loader2, Sparkles, MessageSquare,
   Mail, CheckCircle, X, Stethoscope, FileCheck, FileMinus,
-  ChevronLeft, Edit3, Download,
+  ChevronLeft, Edit3, Download, PenLine, Clock, Copy, Link,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface Document {
   id: string; title: string; type: string; content: string; createdAt: string
   sentWhatsapp: boolean; sentEmail: boolean
+  signatureToken: string | null; signatureStatus: string | null
+  signedAt: string | null; signerName: string | null
+  signerCpf: string | null; ipAddress: string | null
+  signatureImageUrl: string | null
   patient: { id: string; name: string }
   createdBy: { id: string; name: string }
 }
@@ -95,7 +101,6 @@ function getDocumentTypes(clinicType?: string | null): DocTypeConfig[] {
         { value: 'REPORT', label: 'Relatório de Evolução', icon: FileText },
         { value: 'OTHER', label: 'Outro', icon: FileText },
       ]
-    // MEDICA e padrão
     default:
       return [
         { value: 'PRESCRIPTION', label: 'Receituário', icon: FileText },
@@ -108,7 +113,6 @@ function getDocumentTypes(clinicType?: string | null): DocTypeConfig[] {
   }
 }
 
-// Mapeamento estático para ícones na sidebar (usa enum do Prisma)
 const BASE_ICON_MAP: DocTypeConfig[] = [
   { value: 'PRESCRIPTION', label: 'Receituário', icon: FileText },
   { value: 'EXAM_REQUEST', label: 'Pedido de Exames', icon: FileCheck },
@@ -118,12 +122,19 @@ const BASE_ICON_MAP: DocTypeConfig[] = [
   { value: 'OTHER', label: 'Outro', icon: FileText },
 ]
 
+function maskCpf(cpf: string): string {
+  const d = cpf.replace(/\D/g, '')
+  if (d.length !== 11) return cpf
+  return `***.${d.slice(3, 6)}.${d.slice(6, 9)}-**`
+}
+
 type Step = 'form' | 'preview' | 'done'
 
 export default function DocumentsPage() {
   const [documents, setDocuments] = useState<Document[]>([])
   const [patients, setPatients] = useState<Patient[]>([])
   const [clinicType, setClinicType] = useState<string | null>(null)
+  const [clinicName, setClinicName] = useState('')
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(false)
   const [selectedDoc, setSelectedDoc] = useState<Document | null>(null)
@@ -132,6 +143,7 @@ export default function DocumentsPage() {
   const [generating, setGenerating] = useState(false)
   const [saving, setSaving] = useState(false)
   const [sending, setSending] = useState<'whatsapp' | 'email' | null>(null)
+  const [requestingSignature, setRequestingSignature] = useState(false)
   const [form, setForm] = useState({
     patientId: '', type: 'PRESCRIPTION', title: 'Receituário',
     content: '', details: '', useAI: true,
@@ -152,7 +164,7 @@ export default function DocumentsPage() {
     fetch('/api/settings/clinic').then(r => r.json()).then(d => {
       const ct = d.clinic?.clinicType ?? null
       setClinicType(ct)
-      // Atualiza defaults do form com o primeiro tipo da clínica
+      setClinicName(d.clinic?.name ?? '')
       const types = getDocumentTypes(ct)
       if (types.length > 0) {
         setForm(p => ({ ...p, type: types[0].value, title: types[0].label }))
@@ -238,6 +250,42 @@ export default function DocumentsPage() {
     } catch { toast.error('Erro ao gerar PDF') }
   }
 
+  const downloadSignedPDF = async (doc: Document) => {
+    if (!doc.signatureImageUrl || !doc.signerName || !doc.signerCpf || !doc.signedAt) return
+    try {
+      const { generateSignedDocumentPdf } = await import('@/lib/pdfGenerator')
+      await generateSignedDocumentPdf({
+        title: doc.title,
+        clinicName,
+        patientName: doc.patient.name,
+        content: doc.content,
+        signerName: doc.signerName,
+        signerCpf: doc.signerCpf,
+        signedAt: doc.signedAt,
+        ipAddress: doc.ipAddress || 'desconhecido',
+        signatureImageUrl: doc.signatureImageUrl,
+      })
+    } catch { toast.error('Erro ao gerar PDF assinado') }
+  }
+
+  const requestSignature = async (docId: string) => {
+    setRequestingSignature(true)
+    try {
+      const res = await fetch(`/api/documents/${docId}/request-signature`, { method: 'POST' })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error)
+      toast.success('Link de assinatura gerado!')
+      await fetchDocuments()
+      setSelectedDoc(prev => prev ? {
+        ...prev,
+        signatureToken: data.token,
+        signatureStatus: 'PENDING',
+      } : null)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao solicitar assinatura')
+    } finally { setRequestingSignature(false) }
+  }
+
   const resetForm = () => {
     const types = getDocumentTypes(clinicType)
     const first = types[0] ?? { value: 'PRESCRIPTION', label: 'Receituário' }
@@ -252,9 +300,22 @@ export default function DocumentsPage() {
   )
 
   const typeInfo = (type: string) => BASE_ICON_MAP.find(t => t.value === type) ?? BASE_ICON_MAP[5]
-
-  // Seleção de tipo considera também o título (evita highlight duplo em values repetidos)
   const isSelected = (dt: DocTypeConfig) => form.type === dt.value && form.title === dt.label
+
+  const signLink = (doc: Document) => {
+    const origin = typeof window !== 'undefined' ? window.location.origin : (process.env.NEXT_PUBLIC_APP_URL || '')
+    return doc.signatureToken ? `${origin}/sign/${doc.signatureToken}` : null
+  }
+
+  const sigBadge = (doc: Document) => {
+    if (doc.signatureStatus === 'SIGNED') {
+      return <span className="text-xs text-violet-600 flex items-center gap-0.5"><CheckCircle className="w-3 h-3" />Assinado</span>
+    }
+    if (doc.signatureToken && doc.signatureStatus === 'PENDING') {
+      return <span className="text-xs text-amber-500 flex items-center gap-0.5"><Clock className="w-3 h-3" />Aguardando</span>
+    }
+    return null
+  }
 
   return (
     <div className="flex h-full">
@@ -283,6 +344,7 @@ export default function DocumentsPage() {
               </div>
             ) : filteredDocs.map(doc => {
               const T = typeInfo(doc.type)
+              const badge = sigBadge(doc)
               return (
                 <button key={doc.id} onClick={() => { setSelectedDoc(doc); setShowNewForm(false) }}
                   className={cn('w-full text-left px-4 py-3.5 border-b border-gray-50 hover:bg-gray-50 transition',
@@ -293,9 +355,10 @@ export default function DocumentsPage() {
                       <p className="text-sm font-medium text-gray-900 truncate">{doc.title}</p>
                       <p className="text-xs text-gray-500 truncate">{doc.patient.name}</p>
                       <p className="text-xs text-gray-400 mt-0.5">{formatDate(doc.createdAt)}</p>
-                      <div className="flex gap-1.5 mt-1">
+                      <div className="flex flex-wrap gap-1.5 mt-1">
                         {doc.sentWhatsapp && <span className="text-xs text-green-500 flex items-center gap-0.5"><CheckCircle className="w-3 h-3" />WA</span>}
                         {doc.sentEmail && <span className="text-xs text-blue-500 flex items-center gap-0.5"><CheckCircle className="w-3 h-3" />Email</span>}
+                        {badge}
                       </div>
                     </div>
                   </div>
@@ -333,7 +396,7 @@ export default function DocumentsPage() {
               </button>
             </div>
 
-            {/* STEP 1: Form */}
+            {/* STEP 1 */}
             {step === 'form' && (
               <div className="space-y-5">
                 <div>
@@ -392,7 +455,7 @@ export default function DocumentsPage() {
               </div>
             )}
 
-            {/* STEP 2: Preview & Edit */}
+            {/* STEP 2 */}
             {step === 'preview' && (
               <div className="space-y-4">
                 <div className="flex items-center gap-2 mb-2">
@@ -417,10 +480,27 @@ export default function DocumentsPage() {
           <div className="p-6 max-w-3xl">
             <div className="flex items-start justify-between mb-5">
               <div>
-                <h2 className="text-xl font-bold text-gray-900">{selectedDoc.title}</h2>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-xl font-bold text-gray-900">{selectedDoc.title}</h2>
+                  {selectedDoc.signatureStatus === 'SIGNED' && (
+                    <span className="px-2 py-0.5 text-xs font-medium bg-violet-100 text-violet-700 rounded-full flex items-center gap-1">
+                      <CheckCircle className="w-3 h-3" />Assinado
+                    </span>
+                  )}
+                  {selectedDoc.signatureToken && selectedDoc.signatureStatus === 'PENDING' && (
+                    <span className="px-2 py-0.5 text-xs font-medium bg-amber-100 text-amber-700 rounded-full flex items-center gap-1">
+                      <Clock className="w-3 h-3" />Aguardando Assinatura
+                    </span>
+                  )}
+                  {!selectedDoc.signatureToken && (
+                    <span className="px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-500 rounded-full">
+                      Assinatura não solicitada
+                    </span>
+                  )}
+                </div>
                 <p className="text-sm text-gray-500 mt-1">{selectedDoc.patient.name} · {formatDate(selectedDoc.createdAt)} · {selectedDoc.createdBy.name}</p>
               </div>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2 justify-end">
                 <button onClick={() => downloadPDF(selectedDoc)}
                   className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium bg-gray-100 text-gray-700 hover:bg-gray-200 transition">
                   <Download className="w-4 h-4" />PDF
@@ -439,8 +519,128 @@ export default function DocumentsPage() {
                 </button>
               </div>
             </div>
-            <div className="bg-white rounded-xl border border-gray-200 p-8 shadow-sm">
+
+            {/* Document content */}
+            <div className="bg-white rounded-xl border border-gray-200 p-8 shadow-sm mb-5">
               <pre className="whitespace-pre-wrap text-sm text-gray-800 font-sans leading-relaxed">{selectedDoc.content}</pre>
+            </div>
+
+            {/* ── Signature section ── */}
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+              <div className="flex items-center gap-2 px-5 py-4 border-b border-gray-100">
+                <PenLine className="w-4 h-4 text-sky-500" />
+                <h3 className="font-semibold text-gray-900 text-sm">Assinatura Digital</h3>
+              </div>
+
+              <div className="p-5">
+                {/* Not requested */}
+                {!selectedDoc.signatureToken && selectedDoc.signatureStatus !== 'SIGNED' && (
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm text-gray-500">Nenhuma assinatura solicitada para este documento.</p>
+                    <button
+                      onClick={() => requestSignature(selectedDoc.id)}
+                      disabled={requestingSignature}
+                      className="flex items-center gap-2 px-4 py-2 bg-sky-500 text-white rounded-lg text-sm font-medium hover:bg-sky-600 disabled:opacity-60 transition"
+                    >
+                      {requestingSignature ? <Loader2 className="w-4 h-4 animate-spin" /> : <PenLine className="w-4 h-4" />}
+                      Solicitar Assinatura
+                    </button>
+                  </div>
+                )}
+
+                {/* Pending — show link */}
+                {selectedDoc.signatureToken && selectedDoc.signatureStatus === 'PENDING' && (() => {
+                  const link = signLink(selectedDoc)!
+                  const waMsg = encodeURIComponent(
+                    `Olá, ${selectedDoc.patient.name}! 📋\nA ${clinicName} solicita sua assinatura digital no documento:\n*${selectedDoc.title}*\nAcesse o link abaixo para visualizar e assinar:\n${link}\n⚠️ Esta assinatura tem validade legal.`
+                  )
+                  return (
+                    <div className="space-y-3">
+                      <p className="text-sm text-amber-700 font-medium">Aguardando assinatura do paciente.</p>
+                      <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+                        <Link className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                        <span className="text-xs text-gray-600 flex-1 truncate">{link}</span>
+                        <button
+                          onClick={() => { navigator.clipboard.writeText(link); toast.success('Link copiado!') }}
+                          className="p-1 hover:bg-gray-200 rounded text-gray-500 hover:text-gray-700"
+                          title="Copiar link"
+                        >
+                          <Copy className="w-4 h-4" />
+                        </button>
+                      </div>
+                      <div className="flex gap-2">
+                        <a
+                          href={`https://wa.me/?text=${waMsg}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-2 px-3 py-2 bg-green-500 text-white rounded-lg text-sm font-medium hover:bg-green-600 transition"
+                        >
+                          <MessageSquare className="w-4 h-4" />
+                          Enviar via WhatsApp
+                        </a>
+                        <button
+                          onClick={() => requestSignature(selectedDoc.id)}
+                          disabled={requestingSignature}
+                          className="flex items-center gap-2 px-3 py-2 border border-gray-200 text-gray-600 rounded-lg text-sm hover:bg-gray-50 transition"
+                        >
+                          Gerar novo link
+                        </button>
+                      </div>
+                    </div>
+                  )
+                })()}
+
+                {/* Signed — show info + image + download */}
+                {selectedDoc.signatureStatus === 'SIGNED' && (
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-2 text-green-700 font-medium text-sm">
+                      <CheckCircle className="w-4 h-4" />
+                      Documento assinado com sucesso
+                    </div>
+                    <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
+                      <div>
+                        <span className="text-gray-500">Signatário:</span>{' '}
+                        <span className="font-medium text-gray-900">{selectedDoc.signerName}</span>
+                      </div>
+                      <div>
+                        <span className="text-gray-500">CPF:</span>{' '}
+                        <span className="font-medium text-gray-900">
+                          {selectedDoc.signerCpf ? maskCpf(selectedDoc.signerCpf) : '-'}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-gray-500">Data/Hora:</span>{' '}
+                        <span className="font-medium text-gray-900">
+                          {selectedDoc.signedAt
+                            ? format(new Date(selectedDoc.signedAt), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })
+                            : '-'}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-gray-500">IP:</span>{' '}
+                        <span className="font-medium text-gray-900">{selectedDoc.ipAddress || '-'}</span>
+                      </div>
+                    </div>
+                    {selectedDoc.signatureImageUrl && (
+                      <div>
+                        <p className="text-xs text-gray-500 mb-1">Assinatura:</p>
+                        <img
+                          src={selectedDoc.signatureImageUrl}
+                          alt="Assinatura digital"
+                          className="h-20 border border-gray-200 rounded-lg p-2 bg-white"
+                        />
+                      </div>
+                    )}
+                    <button
+                      onClick={() => downloadSignedPDF(selectedDoc)}
+                      className="flex items-center gap-2 px-4 py-2 bg-violet-500 text-white rounded-lg text-sm font-medium hover:bg-violet-600 transition"
+                    >
+                      <Download className="w-4 h-4" />
+                      Baixar Documento Assinado
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         ) : (

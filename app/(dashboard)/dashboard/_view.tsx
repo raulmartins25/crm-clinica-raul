@@ -1,12 +1,13 @@
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
-import { Calendar, Clock, CheckCircle2, AlertCircle } from 'lucide-react'
+import { Calendar, Clock, CheckCircle2, AlertCircle, Package } from 'lucide-react'
 import Link from 'next/link'
 import type { DashboardData } from './_data'
 
 interface DashboardViewProps {
   data: DashboardData
   sessionName: string
+  sessionRole: string
 }
 
 const STATUS_CONFIG = {
@@ -18,8 +19,8 @@ const STATUS_CONFIG = {
   NO_SHOW:     { label: 'Faltou',       color: 'bg-orange-100 text-orange-700', Icon: AlertCircle },
 }
 
-export function DashboardView({ data, sessionName }: DashboardViewProps) {
-  const { now, stats, quickActions, clinicLabel, todayAppointmentsList } = data
+export function DashboardView({ data, sessionName, sessionRole }: DashboardViewProps) {
+  const { now, stats, quickActions, clinicLabel, todayAppointmentsList, stockAlerts } = data
 
   return (
     <div className="p-6 space-y-6">
@@ -35,6 +36,19 @@ export function DashboardView({ data, sessionName }: DashboardViewProps) {
           {clinicLabel} · {format(now, 'MMMM yyyy', { locale: ptBR })}
         </p>
       </div>
+
+      {/* Stock alert banner — ADMIN only */}
+      {sessionRole === 'ADMIN' && stockAlerts > 0 && (
+        <div className="flex items-center gap-3 bg-yellow-50 border border-yellow-200 rounded-xl px-4 py-3">
+          <Package className="w-4 h-4 text-yellow-500 flex-shrink-0" />
+          <p className="text-sm text-yellow-800 flex-1">
+            <strong>{stockAlerts}</strong> item(ns) do estoque precisam de atenção.
+          </p>
+          <Link href="/stock" className="text-xs font-medium text-yellow-700 hover:text-yellow-900 underline flex-shrink-0">
+            Ver estoque →
+          </Link>
+        </div>
+      )}
 
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">

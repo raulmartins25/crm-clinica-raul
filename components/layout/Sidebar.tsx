@@ -19,24 +19,33 @@ import {
   ChevronRight,
   Bell,
   Shield,
+  BarChart2,
+  DollarSign,
+  UserCog,
+  Package,
 } from 'lucide-react'
 
 const navItems = [
-  { href: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-  { href: '/inbox', icon: MessageSquare, label: 'Inbox WhatsApp' },
-  { href: '/patients', icon: Users, label: 'Pacientes' },
-  { href: '/calendar', icon: Calendar, label: 'Agenda' },
-  { href: '/agents', icon: Bot, label: 'Agentes IA' },
-  { href: '/documents', icon: FileText, label: 'Documentos' },
-  { href: '/settings', icon: Settings, label: 'Configurações' },
+  { href: '/dashboard', icon: LayoutDashboard, label: 'Dashboard', roles: null, excludeClinicTypes: null },
+  { href: '/inbox', icon: MessageSquare, label: 'Inbox WhatsApp', roles: null, excludeClinicTypes: null },
+  { href: '/patients', icon: Users, label: 'Pacientes', roles: null, excludeClinicTypes: null },
+  { href: '/calendar', icon: Calendar, label: 'Agenda', roles: null, excludeClinicTypes: null },
+  { href: '/professionals', icon: UserCog, label: 'Profissionais', roles: ['ADMIN'], excludeClinicTypes: null },
+  { href: '/agents', icon: Bot, label: 'Agentes IA', roles: null, excludeClinicTypes: null },
+  { href: '/documents', icon: FileText, label: 'Documentos', roles: null, excludeClinicTypes: null },
+  { href: '/reports', icon: BarChart2, label: 'Relatórios', roles: ['ADMIN', 'DOCTOR'], excludeClinicTypes: null },
+  { href: '/financial', icon: DollarSign, label: 'Financeiro', roles: ['ADMIN'], excludeClinicTypes: null },
+  { href: '/stock', icon: Package, label: 'Estoque', roles: ['ADMIN', 'NURSE'], excludeClinicTypes: ['PSICOLOGIA'] },
+  { href: '/settings', icon: Settings, label: 'Configurações', roles: null, excludeClinicTypes: null },
 ]
 
 interface SidebarProps {
   user: { name: string; email: string; role: string; avatarUrl?: string | null }
   clinicName: string
+  clinicType: string | null
 }
 
-export function Sidebar({ user, clinicName }: SidebarProps) {
+export function Sidebar({ user, clinicName, clinicType }: SidebarProps) {
   const pathname = usePathname()
   const router = useRouter()
   const [collapsed, setCollapsed] = useState(false)
@@ -77,7 +86,10 @@ export function Sidebar({ user, clinicName }: SidebarProps) {
 
       {/* Nav */}
       <nav className="flex-1 p-2 space-y-0.5 overflow-y-auto">
-        {navItems.map(({ href, icon: Icon, label }) => {
+        {navItems.filter(item =>
+          (!item.roles || item.roles.includes(user.role)) &&
+          (!item.excludeClinicTypes || !clinicType || !item.excludeClinicTypes.includes(clinicType))
+        ).map(({ href, icon: Icon, label }) => {
           const active = pathname === href || (href !== '/dashboard' && pathname.startsWith(href))
           return (
             <Link

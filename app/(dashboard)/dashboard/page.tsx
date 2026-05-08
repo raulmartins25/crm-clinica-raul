@@ -14,5 +14,5 @@ export default async function DashboardPage() {
 
   const data = await getDashboardData(session.clinicId, clinic?.clinicType ?? null)
 
-  return <DashboardView data={data} sessionName={session.name} />
+  return <DashboardView data={data} sessionName={session.name} sessionRole={session.role} />
 }

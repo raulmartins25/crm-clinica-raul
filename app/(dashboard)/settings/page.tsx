@@ -21,6 +21,18 @@ const tabs = [
 
 type TabId = typeof tabs[number]['id']
 
+const PRESET_COLORS = [
+  { hex: '#3b82f6', label: 'Azul' },
+  { hex: '#22c55e', label: 'Verde' },
+  { hex: '#8b5cf6', label: 'Roxo' },
+  { hex: '#ec4899', label: 'Rosa' },
+  { hex: '#f97316', label: 'Laranja' },
+  { hex: '#06b6d4', label: 'Ciano' },
+  { hex: '#ef4444', label: 'Vermelho' },
+  { hex: '#eab308', label: 'Amarelo' },
+]
+const PROFESSIONAL_ROLES = ['DOCTOR', 'NURSE', 'ASSISTANT']
+
 const userSchema = z.object({
   name: z.string().min(2),
   email: z.string().email(),
@@ -74,6 +86,9 @@ export default function SettingsPage() {
   const [uploadingLogo, setUploadingLogo] = useState(false)
   const [editingDoctor, setEditingDoctor] = useState<string | null>(null)
   const [doctorEdits, setDoctorEdits] = useState<Record<string, { crm: string; specialty: string }>>({})
+  const [newUserColor, setNewUserColor] = useState('')
+  const [newUserRoom, setNewUserRoom] = useState('')
+  const [newUserRole, setNewUserRole] = useState('RECEPTIONIST')
   const logoInputRef = useRef<HTMLInputElement>(null)
 
   // WhatsApp state
@@ -182,13 +197,20 @@ export default function SettingsPage() {
       const res = await fetch('/api/settings/users', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
+        body: JSON.stringify({
+          ...data,
+          color: PROFESSIONAL_ROLES.includes(data.role) ? (newUserColor || null) : null,
+          roomDefault: PROFESSIONAL_ROLES.includes(data.role) ? (newUserRoom || null) : null,
+        }),
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error)
       toast.success('Usuário criado com sucesso!')
       setShowNewUser(false)
       resetUser()
+      setNewUserColor('')
+      setNewUserRoom('')
+      setNewUserRole('RECEPTIONIST')
       fetchUsers()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Erro ao criar usuário')
@@ -331,6 +353,7 @@ export default function SettingsPage() {
                     <div>
                       <label className="text-sm font-medium text-gray-700 mb-1 block">Função</label>
                       <select {...userReg('role')}
+                        onChange={e => setNewUserRole(e.target.value)}
                         className="w-full px-3.5 py-2.5 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-sky-500">
                         {Object.entries(roleLabels).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
                       </select>
@@ -345,6 +368,32 @@ export default function SettingsPage() {
                       <input {...userReg('specialty')} placeholder="ex: Cardiologia"
                         className="w-full px-3.5 py-2.5 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-sky-500" />
                     </div>
+                    {/* Color + Room — only for professionals */}
+                    {PROFESSIONAL_ROLES.includes(newUserRole) && (
+                      <>
+                        <div className="col-span-2">
+                          <label className="text-sm font-medium text-gray-700 mb-2 block">Cor na agenda</label>
+                          <div className="flex gap-2 flex-wrap">
+                            {PRESET_COLORS.map(c => (
+                              <button key={c.hex} type="button" onClick={() => setNewUserColor(c.hex)} title={c.label}
+                                className={`w-7 h-7 rounded-full border-2 transition ${newUserColor === c.hex ? 'border-gray-800 scale-110' : 'border-transparent hover:scale-105'}`}
+                                style={{ backgroundColor: c.hex }} />
+                            ))}
+                            {newUserColor && (
+                              <button type="button" onClick={() => setNewUserColor('')}
+                                className="w-7 h-7 rounded-full border-2 border-dashed border-gray-300 flex items-center justify-center text-gray-400 text-xs hover:text-gray-600">
+                                <X className="w-3 h-3" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                        <div className="col-span-2">
+                          <label className="text-sm font-medium text-gray-700 mb-1 block">Sala padrão</label>
+                          <input value={newUserRoom} onChange={e => setNewUserRoom(e.target.value)} placeholder="ex: Consultório 1"
+                            className="w-full px-3.5 py-2.5 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-sky-500" />
+                        </div>
+                      </>
+                    )}
                     <div className="col-span-2 flex gap-2 justify-end">
                       <button type="button" onClick={() => setShowNewUser(false)}
                         className="px-4 py-2 border border-gray-200 rounded-lg text-sm text-gray-600 hover:bg-gray-50">Cancelar</button>

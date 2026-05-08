@@ -21,6 +21,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
           avatarUrl: session.avatarUrl,
         }}
         clinicName={clinic.name}
+        clinicType={clinic.clinicType ?? null}
       />
       <main className="flex-1 overflow-hidden flex flex-col">{children}</main>
     </div>

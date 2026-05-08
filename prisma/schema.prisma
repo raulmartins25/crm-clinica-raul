@@ -63,6 +63,31 @@ enum AgentStatus {
   INACTIVE
 }
 
+enum StockMovementType {
+  IN
+  OUT
+  ADJUSTMENT
+  EXPIRED
+}
+
+enum PaymentMethod {
+  CASH
+  CREDIT_CARD
+  DEBIT_CARD
+  PIX
+  BANK_TRANSFER
+  HEALTH_INSURANCE
+  OTHER
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  PARTIAL
+  CANCELLED
+  REFUNDED
+}
+
 // ─── CLINIC ────────────────────────────────────────────────────────────
 model Clinic {
   id                  String   @id @default(cuid())
@@ -84,13 +109,17 @@ model Clinic {
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
-  users            User[]
-  patients         Patient[]
-  appointments     Appointment[]
-  whatsappInstance WhatsappInstance?
-  aiAgents         AIAgent[]
-  emailConfig      EmailConfig?
-  googleCalendar   GoogleCalendarConfig?
+  users                 User[]
+  patients              Patient[]
+  appointments          Appointment[]
+  whatsappInstance      WhatsappInstance?
+  aiAgents              AIAgent[]
+  emailConfig           EmailConfig?
+  googleCalendar        GoogleCalendarConfig?
+  payments              Payment[]
+  professionalSchedules ProfessionalSchedule[]
+  stockItems            StockItem[]
+  stockMovements        StockMovement[]
 }
 
 // ─── USERS ─────────────────────────────────────────────────────────────
@@ -105,6 +134,8 @@ model User {
   specialty    String?
   phone        String?
   avatarUrl    String?
+  color        String?
+  roomDefault  String?
   active       Boolean  @default(true)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
@@ -114,6 +145,9 @@ model User {
   sentMessages    Message[]     @relation("SentBy")
   documents       Document[]    @relation("CreatedByUser")
   medicalRecords  MedicalRecord[] @relation("RecordDoctor")
+  paymentsCreated Payment[]     @relation("PaymentCreator")
+  schedule        ProfessionalSchedule[]
+  stockMovements  StockMovement[]  @relation("StockPerformer")
 }
 
 // ─── PATIENTS ──────────────────────────────────────────────────────────
@@ -144,6 +178,7 @@ model Patient {
   appointments   Appointment[]
   medicalRecords MedicalRecord[]
   documents      Document[]
+  payments       Payment[]
 }
 
 // ─── WHATSAPP ──────────────────────────────────────────────────────────
@@ -221,14 +256,21 @@ model Appointment {
   room            String?
   price           Float?
   notes           String?
-  reminderSent    Boolean           @default(false)
-  googleEventId   String?
-  createdAt       DateTime          @default(now())
-  updatedAt       DateTime          @updatedAt
+  reminderSent          Boolean           @default(false)
+  googleEventId         String?
+  recurrence            String?
+  recurrenceEnd         DateTime?
+  parentId              String?
+  isReturn              Boolean           @default(false)
+  postAppointmentSent   Boolean           @default(false)
+  returnSuggestionSent  Boolean           @default(false)
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
 
-  clinic  Clinic  @relation(fields: [clinicId], references: [id])
-  patient Patient @relation(fields: [patientId], references: [id])
-  doctor  User    @relation("DoctorAppointments", fields: [doctorId], references: [id])
+  clinic   Clinic   @relation(fields: [clinicId], references: [id])
+  patient  Patient  @relation(fields: [patientId], references: [id])
+  doctor   User     @relation("DoctorAppointments", fields: [doctorId], references: [id])
+  payment  Payment?
 }
 
 // ─── MEDICAL RECORDS ───────────────────────────────────────────────────
@@ -268,10 +310,17 @@ model Document {
   content     String
   htmlContent String?
   pdfUrl      String?
-  sentWhatsapp Boolean     @default(false)
-  sentEmail    Boolean     @default(false)
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
+  sentWhatsapp      Boolean   @default(false)
+  sentEmail         Boolean   @default(false)
+  signatureToken    String?   @unique
+  signatureStatus   String?
+  signedAt          DateTime?
+  signatureImageUrl String?
+  signerName        String?
+  signerCpf         String?
+  ipAddress         String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
   patient   Patient @relation(fields: [patientId], references: [id])
   createdBy User    @relation("CreatedByUser", fields: [createdById], references: [id])
@@ -361,4 +410,87 @@ model GoogleCalendarConfig {
   updatedAt    DateTime @updatedAt
 
   clinic Clinic @relation(fields: [clinicId], references: [id])
+}
+
+// ─── PROFESSIONAL SCHEDULES ─────────────────────────────────────────────────
+model ProfessionalSchedule {
+  id          String   @id @default(cuid())
+  userId      String
+  clinicId    String
+  dayOfWeek   Int      // 0=Dom, 1=Seg, 2=Ter, 3=Qua, 4=Qui, 5=Sex, 6=Sab
+  startTime   String   // ex: "08:00"
+  endTime     String   // ex: "18:00"
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user   User   @relation(fields: [userId], references: [id])
+  clinic Clinic @relation(fields: [clinicId], references: [id])
+
+  @@unique([userId, dayOfWeek])
+}
+
+// ─── FINANCIAL ─────────────────────────────────────────────────────────────
+model Payment {
+  id            String        @id @default(cuid())
+  clinicId      String
+  patientId     String
+  appointmentId String?       @unique
+  amount        Float
+  amountPaid    Float         @default(0)
+  discount      Float         @default(0)
+  method        PaymentMethod @default(PIX)
+  status        PaymentStatus @default(PENDING)
+  dueDate       DateTime?
+  paidAt        DateTime?
+  notes         String?
+  receiptSent   Boolean       @default(false)
+  createdById   String
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  clinic      Clinic       @relation(fields: [clinicId], references: [id])
+  patient     Patient      @relation(fields: [patientId], references: [id])
+  appointment Appointment? @relation(fields: [appointmentId], references: [id])
+  createdBy   User         @relation("PaymentCreator", fields: [createdById], references: [id])
+}
+
+// ─── STOCK ─────────────────────────────────────────────────────────────────────
+model StockItem {
+  id             String    @id @default(cuid())
+  clinicId       String
+  name           String
+  description    String?
+  category       String?
+  unit           String
+  quantity       Float     @default(0)
+  minQuantity    Float     @default(0)
+  maxQuantity    Float?
+  costPrice      Float?
+  supplier       String?
+  expirationDate DateTime?
+  location       String?
+  active         Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  clinic    Clinic          @relation(fields: [clinicId], references: [id])
+  movements StockMovement[]
+}
+
+model StockMovement {
+  id          String            @id @default(cuid())
+  clinicId    String
+  itemId      String
+  type        StockMovementType
+  quantity    Float
+  unitCost    Float?
+  totalCost   Float?
+  reason      String?
+  performedBy String
+  createdAt   DateTime          @default(now())
+
+  clinic    Clinic    @relation(fields: [clinicId], references: [id])
+  item      StockItem @relation(fields: [itemId], references: [id])
+  performer User      @relation("StockPerformer", fields: [performedBy], references: [id])
 }

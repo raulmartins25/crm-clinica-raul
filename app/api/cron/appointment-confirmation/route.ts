@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireSession } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { EvolutionAPI } from '@/lib/evolution'
 import { format, addHours } from 'date-fns'
@@ -15,7 +14,6 @@ export async function POST(req: NextRequest) {
     const now = new Date()
     const results = { sent: 0, errors: 0 }
 
-    // Find clinics with agents that have appointment confirmation enabled
     const agents = await prisma.aIAgent.findMany({
       where: { status: 'ACTIVE', appointmentConfirmEnabled: true },
       include: { clinic: { include: { whatsappInstance: true } } },
@@ -28,11 +26,11 @@ export async function POST(req: NextRequest) {
       const windowStart = addHours(now, hoursAhead - 0.5)
       const windowEnd = addHours(now, hoursAhead + 0.5)
 
-      // Find appointments in the confirmation window that haven't been confirmed yet
       const appointments = await prisma.appointment.findMany({
         where: {
           clinicId: agent.clinicId,
           status: 'SCHEDULED',
+          reminderSent: false,
           startTime: { gte: windowStart, lte: windowEnd },
         },
         include: { patient: true, doctor: true },
@@ -49,21 +47,27 @@ export async function POST(req: NextRequest) {
         if (!phone) continue
 
         const dateStr = format(new Date(apt.startTime), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })
-        const msg = agent.appointmentConfirmMessage ||
+        const text = agent.appointmentConfirmMessage ||
           `Olá, ${apt.patient.name}! 👋\n\nGostaríamos de confirmar sua consulta com *${apt.doctor.name}* no dia *${dateStr}*.\n\nPor favor, responda:\n✅ *SIM* — para confirmar\n❌ *NÃO* — para cancelar\n\nAté breve! 🏥`
 
         try {
-          const remoteJid = phone.replace(/\D/g, '') + '@s.whatsapp.net'
-          await (evo as any).sendMessage(remoteJid, msg)
+          const number = phone.replace(/\D/g, '')
+          await evo.sendText({ number, text })
+          await prisma.appointment.update({
+            where: { id: apt.id },
+            data: { reminderSent: true },
+          })
           results.sent++
-        } catch {
+        } catch (err) {
+          console.error(`[appointment-confirmation] Failed for apt ${apt.id}:`, err)
           results.errors++
         }
       }
     }
 
     return NextResponse.json({ ok: true, ...results })
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 })
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Unknown error'
+    return NextResponse.json({ error: msg }, { status: 500 })
   }
 }

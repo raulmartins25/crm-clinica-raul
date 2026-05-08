@@ -27,6 +27,8 @@ export async function POST(req: NextRequest) {
       crm: body.crm || null,
       specialty: body.specialty || null,
       phone: body.phone || null,
+      color: body.color || null,
+      roomDefault: body.roomDefault || null,
     },
   })
   return NextResponse.json({ user }, { status: 201 })
@@ -35,10 +37,14 @@ export async function POST(req: NextRequest) {
 export async function PATCH(req: NextRequest) {
   const session = await requireSession()
   const body = await req.json()
-  const { id, crm, specialty, name, phone, active } = body
+  const { id, crm, specialty, name, phone, active, color, roomDefault } = body
   const user = await prisma.user.updateMany({
     where: { id, clinicId: session.clinicId },
-    data: { crm, specialty, name, phone, active },
+    data: {
+      crm, specialty, name, phone, active,
+      ...(color !== undefined ? { color: color || null } : {}),
+      ...(roomDefault !== undefined ? { roomDefault: roomDefault || null } : {}),
+    },
   })
   return NextResponse.json({ user })
 }

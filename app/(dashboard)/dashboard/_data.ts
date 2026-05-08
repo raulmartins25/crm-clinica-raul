@@ -42,6 +42,7 @@ export interface DashboardData {
   quickActions: QuickAction[]
   clinicLabel: string
   todayAppointmentsList: AppointmentItem[]
+  stockAlerts: number
 }
 
 // ─── Mapeamentos ─────────────────────────────────────────────────────────────
@@ -270,6 +271,7 @@ export async function getDashboardData(
     monthAppointments,
     unreadMessages,
     todayAppointmentsList,
+    stockItemsForAlerts,
   ] = await Promise.all([
     prisma.patient.count({ where: { clinicId, active: true } }),
     prisma.appointment.count({
@@ -300,7 +302,16 @@ export async function getDashboardData(
       orderBy: { startTime: 'asc' },
       take: 8,
     }),
+    prisma.stockItem.findMany({
+      where: { clinicId, active: true },
+      select: { quantity: true, minQuantity: true, expirationDate: true },
+    }),
   ])
+
+  const thirtyDaysFromNow = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000)
+  const stockAlerts = stockItemsForAlerts.filter(
+    i => i.quantity <= i.minQuantity || (i.expirationDate != null && i.expirationDate <= thirtyDaysFromNow),
+  ).length
 
   const stats = await getClinicStats(
     clinicId,
@@ -320,5 +331,6 @@ export async function getDashboardData(
     quickActions: getQuickActions(clinicType),
     clinicLabel: clinicType ? (CLINIC_TYPE_LABELS[clinicType] ?? clinicType) : 'Clínica Médica',
     todayAppointmentsList,
+    stockAlerts,
   }
 }

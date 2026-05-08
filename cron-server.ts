@@ -30,4 +30,28 @@ cron.schedule('*/30 * * * *', () => {
   callCronEndpoint('/api/cron/appointment-confirmation')
 })
 
-console.log('[CRON] Cron server started. Follow-up: every 5min | Confirmations: every 30min')
+// Post-appointment message — every hour
+cron.schedule('0 * * * *', async () => {
+  console.log('[CRON] Running post-appointment check...')
+  try {
+    const res = await fetch(`${BASE_URL}/api/cron/post-appointment?secret=${CRON_SECRET}`)
+    const data = await res.json()
+    console.log('[CRON] /api/cron/post-appointment:', data)
+  } catch (err) {
+    console.error('[CRON] Error calling /api/cron/post-appointment:', err)
+  }
+})
+
+// Return suggestion — every day at 10:00
+cron.schedule('0 10 * * *', async () => {
+  console.log('[CRON] Running return-suggestion check...')
+  try {
+    const res = await fetch(`${BASE_URL}/api/cron/return-suggestion?secret=${CRON_SECRET}`)
+    const data = await res.json()
+    console.log('[CRON] /api/cron/return-suggestion:', data)
+  } catch (err) {
+    console.error('[CRON] Error calling /api/cron/return-suggestion:', err)
+  }
+})
+
+console.log('[CRON] Cron server started. Follow-up: every 5min | Confirmations: every 30min | Post-appointment: every hour | Return suggestion: daily at 10h')
